@@ -12,6 +12,62 @@ const MasterTable = () => {
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [paymentSnapshot, setPaymentSnapshot] = useState({ ids: [], total: 0, count: 0 });
 
+    // --- HELPERS DE ORDENAMIENTO (USER REQUEST) ---
+    const parseMoney = (v) => {
+        if (v === null || v === undefined) return 0;
+        if (typeof v === "number") return v;
+        const s = String(v)
+            .replace(/\$/g, "")
+            .replace(/\s/g, "")
+            .replace(/\./g, "")
+            .replace(/,/g, ".");
+        const n = Number(s);
+        return Number.isFinite(n) ? n : 0;
+    };
+
+    const parseDateDMY = (v) => {
+        if (!v) return 0;
+        if (v instanceof Date) return v.getTime();
+        const s = String(v).trim();
+        const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (!m) return 0;
+        const [_, d, mo, y] = m;
+        const dt = new Date(Number(y), Number(mo) - 1, Number(d));
+        return dt.getTime();
+    };
+
+    const normStr = (v) => (v === null || v === undefined) ? "" : String(v).trim().toLowerCase();
+
+    const compare = (a, b, type) => {
+        if (type === "money" || type === "number") return parseMoney(a) - parseMoney(b);
+        if (type === "date") return parseDateDMY(a) - parseDateDMY(b);
+        return normStr(a).localeCompare(normStr(b), "es-AR");
+    };
+
+    // --- MANEJO DE ESTADO DE ORDEN ---
+    const [sortKey, setSortKey] = useState(null);
+    const [sortDir, setSortDir] = useState("asc");
+
+    const onSort = (key) => {
+        if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+        else { setSortKey(key); setSortDir("asc"); }
+    };
+
+    const colType = {
+        emisor: "string",
+        nroFactura: "string",
+        siniestro: "string",
+        aseguradora: "string",
+        monto: "money",
+        fecha: "date",
+        analista: "string",
+        totalAPagarAnalista: "money",
+        estadoPago: "string",
+        estadoDeCobro: "string",
+        dias: "number"
+    };
+
+    // --- CALCULOS Y FILTROS ---
     const parseDateStr = (dateStr) => {
         if (!dateStr) return new Date(0);
         const [d, m, y] = dateStr.split('/');
@@ -29,8 +85,6 @@ const MasterTable = () => {
         return daysBetween(dateStr, new Date());
     };
 
-
-
     const filteredInvoices = invoices.filter(inv => {
         const term = searchTerm.toLowerCase();
         const matchesSearch = (inv.siniestro || '').toLowerCase().includes(term) ||
@@ -39,9 +93,7 @@ const MasterTable = () => {
 
         const matchAseguradora = !filters.aseguradora || inv.aseguradora === filters.aseguradora;
         const matchAnalista = !filters.analista || inv.analista === filters.analista;
-        // Estado Cobro (Aseguradora)
         const matchEstadoCobro = !filters.estadoDeCobro || (inv.estadoDeCobro || 'NO COBRADO') === filters.estadoDeCobro;
-        // Estado Pago (Analista)
         const matchEstadoPago = !filters.estadoPago || (inv.estadoPago || 'IMPAGO') === filters.estadoPago;
 
         let matchFecha = true;
@@ -53,19 +105,44 @@ const MasterTable = () => {
         let matchVencidos = true;
         if (filters.mostrarVencidos) {
             const days = getDaysFromEmission(inv.fecha);
-            // 40+ Logic: >= 40 days OLD AND Analyst NOT PAID (IMPAGO). 
-            // Collection status (COBRADO/NO COBRADO) is IGNORED here.
             matchVencidos = days >= 40 && (inv.estadoPago || 'IMPAGO') === 'IMPAGO';
         }
 
         return matchesSearch && matchAseguradora && matchAnalista && matchEstadoCobro && matchEstadoPago && matchFecha && matchVencidos;
     });
 
+    // --- SORTING ---
+    const visibleRows = React.useMemo(() => {
+        const rows = [...filteredInvoices];
+        if (!sortKey) return rows;
+
+        const t = colType[sortKey] || "string";
+        const getSortVal = (r, k) => {
+            if (k === 'dias') {
+                if (r.estadoDeCobro === 'COBRADO') {
+                    // Calcular días reales a fecha de pago si existe, sino hoy (fallback)
+                    // NOTA: La lógica de render usa `daysBetween(inv.fecha, inv.fechaPago || new Date())`
+                    // Usamos lo mismo aquí.
+                    return daysBetween(r.fecha, r.fechaPago || new Date());
+                }
+                return daysBetween(r.fecha, new Date());
+            }
+            return r[k];
+        };
+
+        rows.sort((r1, r2) => {
+            const valA = getSortVal(r1, sortKey);
+            const valB = getSortVal(r2, sortKey);
+            const c = compare(valA, valB, t);
+            return sortDir === "asc" ? c : -c;
+        });
+        return rows;
+    }, [filteredInvoices, sortKey, sortDir]);
+
     const isOverdue = (inv) => {
         if ((inv.estadoDeCobro || 'NO COBRADO') === 'COBRADO') return false;
 
         const defaultConfig = { dias: 30, tolerancia: 0 };
-        // Safe access to config
         const aseg = inv.aseguradora ? inv.aseguradora.toUpperCase() : 'OTRA';
         const asegConfig = config?.aseguradoras?.[aseg] || config?.aseguradoras?.['OTRA'] || defaultConfig;
 
@@ -99,7 +176,7 @@ const MasterTable = () => {
     const handleExport = () => {
         const BOM = "\uFEFF";
         const header = "Nro Factura;Siniestro;Aseguradora;Emisor;Monto;Fecha Emision;Analista;Total Liq;Estado Pago;Estado Cobro\n";
-        const rows = filteredInvoices.map(inv =>
+        const rows = visibleRows.map(inv =>
             `${inv.nroFactura};${inv.siniestro};${inv.aseguradora};${inv.emisor};"${inv.monto}";${inv.fecha};${inv.analista};"${inv.totalAPagarAnalista || 0}";${inv.estadoPago};${inv.estadoDeCobro || 'NO COBRADO'}`
         ).join("\n");
 
@@ -124,7 +201,7 @@ const MasterTable = () => {
         const header = "SINIESTRO;ASEGURADORA;MONTO GESTION;AHORRO A PAGAR;VIATICOS A PAGAR;TOTAL A PAGAR ANALISTA\n";
 
         let totalGeneral = 0;
-        const rows = filteredInvoices.map(inv => {
+        const rows = visibleRows.map(inv => {
             const total = Number(inv.totalAPagarAnalista || 0);
             totalGeneral += total;
             return `${inv.siniestro};${inv.aseguradora};"${inv.montoGestion || 0}";"${inv.ahorroAPagar || 0}";"${inv.viaticosAPagar || 0}";"${total}"`;
@@ -140,9 +217,9 @@ const MasterTable = () => {
 
         // Snapshot
         setPaymentSnapshot({
-            ids: filteredInvoices.map(i => i.id),
+            ids: visibleRows.map(i => i.id),
             total: totalGeneral,
-            count: filteredInvoices.length
+            count: visibleRows.length
         });
     };
 
@@ -150,11 +227,6 @@ const MasterTable = () => {
         if (!paymentSnapshot.ids.length) return;
 
         paymentSnapshot.ids.forEach(id => {
-            const inv = invoices.find(i => i.id === id); // Find in current state to be safe? 
-            // Actually updateInvoice updates by ID.
-            // Check requirement: "solo si estadoPago === 'IMPAGO'"
-            // We can do that check inside the loop or trust snapshot (which came from filtered view).
-            // Better check current state.
             const current = invoices.find(i => i.id === id);
             if (current && current.estadoPago !== 'PAGO') {
                 updateInvoice(id, {
@@ -176,7 +248,7 @@ const MasterTable = () => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        const rows = filteredInvoices.map(inv => {
+        const rows = visibleRows.map(inv => {
             const emission = parseDateStr(inv.fecha);
             const diffTime = Math.abs(today - emission);
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -193,14 +265,22 @@ const MasterTable = () => {
 
     const uniqueAseguradoras = [...new Set(invoices.map(inv => inv.aseguradora))];
 
+    // Sort Icon Helper
+    const SortIcon = ({ col }) => {
+        if (sortKey !== col) return null;
+        return <span className="ml-1 text-xs">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+    };
+
+    const thClass = "p-2 cursor-pointer select-none hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors";
+
     return (
-        <div className="bg-white p-6 rounded-lg shadow-md">
+        <div className="bg-white dark:bg-slate-900 dark:text-gray-100 p-6 rounded-lg shadow-md transition-colors">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                <h2 className="text-xl font-bold text-[#1d2e3f] flex items-center gap-2">Base de Datos Maestra</h2>
+                <h2 className="text-xl font-bold text-[#1d2e3f] dark:text-blue-100 flex items-center gap-2">Base de Datos Maestra</h2>
                 <div className="flex flex-wrap gap-2">
                     <button
                         onClick={toggleFilterOld}
-                        className={`flex items-center gap-1 px-3 py-1.5 rounded hover:bg-amber-700 text-xs font-bold shadow ${filters.mostrarVencidos ? 'bg-amber-800 text-white ring-2 ring-amber-500' : 'bg-amber-600 text-white'}`}
+                        className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-bold shadow transition-all ${filters.mostrarVencidos ? 'bg-amber-800 text-white ring-2 ring-amber-500' : 'bg-amber-600 hover:bg-amber-700 text-white'}`}
                     >
                         <Clock size={14} /> {filters.mostrarVencidos ? 'VER TODOS' : 'VER 40+ DÍAS'}
                     </button>
@@ -210,7 +290,7 @@ const MasterTable = () => {
                     <button
                         onClick={() => setShowPaymentModal(true)}
                         disabled={paymentSnapshot.count === 0}
-                        className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-bold shadow ${paymentSnapshot.count === 0 ? 'bg-gray-300 text-gray-500' : 'bg-green-600 text-white hover:bg-green-700'}`}
+                        className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-bold shadow ${paymentSnapshot.count === 0 ? 'bg-gray-300 dark:bg-gray-700 text-gray-500' : 'bg-green-600 text-white hover:bg-green-700'}`}
                     >
                         <CheckCircle size={14} /> CONFIRM. PAGOS ({paymentSnapshot.count})
                     </button>
@@ -223,33 +303,33 @@ const MasterTable = () => {
                 </div>
             </div>
 
-            <div className="bg-gray-50 p-4 rounded mb-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="bg-gray-50 dark:bg-slate-800 p-4 rounded mb-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 shadow-inner">
                 <div className="relative">
                     <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                    <input type="text" placeholder="Buscar..." className="pl-9 p-2 border rounded w-full text-sm" onChange={e => setSearchTerm(e.target.value)} />
+                    <input type="text" placeholder="Buscar..." className="pl-9 p-2 border rounded w-full text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" onChange={e => setSearchTerm(e.target.value)} />
                 </div>
-                <select className="border p-2 rounded text-sm" onChange={e => setFilters({ ...filters, aseguradora: e.target.value })}>
+                <select className="border p-2 rounded text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" onChange={e => setFilters({ ...filters, aseguradora: e.target.value })}>
                     <option value="">Todas las Cías</option>
                     {uniqueAseguradoras.map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
-                <select className="border p-2 rounded text-sm" onChange={e => setFilters({ ...filters, analista: e.target.value })} value={filters.analista}>
+                <select className="border p-2 rounded text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" onChange={e => setFilters({ ...filters, analista: e.target.value })} value={filters.analista}>
                     <option value="">Todos los Analistas</option>
                     {analysts.map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
-                <select className="border p-2 rounded text-sm" onChange={e => setFilters({ ...filters, estadoDeCobro: e.target.value })} value={filters.estadoDeCobro}>
+                <select className="border p-2 rounded text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" onChange={e => setFilters({ ...filters, estadoDeCobro: e.target.value })} value={filters.estadoDeCobro}>
                     <option value="">Estado Cobro (Todos)</option>
                     <option value="COBRADO">COBRADO</option>
                     <option value="NO COBRADO">NO COBRADO</option>
                 </select>
-                <select className="border p-2 rounded text-sm" onChange={e => setFilters({ ...filters, estadoPago: e.target.value })} value={filters.estadoPago}>
+                <select className="border p-2 rounded text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" onChange={e => setFilters({ ...filters, estadoPago: e.target.value })} value={filters.estadoPago}>
                     <option value="">Estado Pago (Todos)</option>
                     <option value="PAGO">PAGO</option>
                     <option value="IMPAGO">IMPAGO</option>
                 </select>
-                {/* Fechas en una misma columna para ahorrar espacio o separadas */}
+                {/* Fechas */}
                 <div className="flex gap-2">
-                    <input type="date" className="border p-2 rounded text-sm w-full" onChange={e => setFilters({ ...filters, fechaDesde: e.target.value })} title="Desde" />
-                    <input type="date" className="border p-2 rounded text-sm w-full" onChange={e => setFilters({ ...filters, fechaHasta: e.target.value })} title="Hasta" />
+                    <input type="date" className="border p-2 rounded text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white" onChange={e => setFilters({ ...filters, fechaDesde: e.target.value })} title="Desde" />
+                    <input type="date" className="border p-2 rounded text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white" onChange={e => setFilters({ ...filters, fechaHasta: e.target.value })} title="Hasta" />
                 </div>
             </div>
 
@@ -259,37 +339,59 @@ const MasterTable = () => {
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                     <thead>
-                        <tr className="text-[#355071] border-b-2 border-[#355071] bg-gray-50">
-                            <th className="p-2">Factura / Siniestro</th>
-                            <th className="p-2">Aseguradora</th>
-                            <th className="p-2 text-right">Monto</th>
-                            <th className="p-2">Emisión</th>
-                            <th className="p-2">Analista</th>
+                        <tr className="text-[#355071] dark:text-blue-300 border-b-2 border-[#355071] bg-gray-50 dark:bg-slate-800">
+                            <th onClick={() => onSort('emisor')} className={thClass}>
+                                Emisor <SortIcon col="emisor" />
+                            </th>
+                            <th onClick={() => onSort('nroFactura')} className={thClass}>
+                                Factura / Siniestro <SortIcon col="nroFactura" />
+                            </th>
+                            <th onClick={() => onSort('aseguradora')} className={thClass}>
+                                Aseguradora <SortIcon col="aseguradora" />
+                            </th>
+                            <th onClick={() => onSort('monto')} className={`${thClass} text-right`}>
+                                Monto <SortIcon col="monto" />
+                            </th>
+                            <th onClick={() => onSort('fecha')} className={thClass}>
+                                Emisión <SortIcon col="fecha" />
+                            </th>
+                            <th onClick={() => onSort('analista')} className={thClass}>
+                                Analista <SortIcon col="analista" />
+                            </th>
 
-                            <th className="p-2">Total Liq.</th>
-                            <th className="p-2">Est. Pago</th>
+                            <th onClick={() => onSort('totalAPagarAnalista')} className={thClass}>
+                                Total Liq. <SortIcon col="totalAPagarAnalista" />
+                            </th>
+                            <th onClick={() => onSort('estadoPago')} className={thClass}>
+                                Est. Pago <SortIcon col="estadoPago" />
+                            </th>
 
-                            <th className="p-2">Est. Cobro</th>
-                            <th className="p-2 text-center">Días</th>
+                            <th onClick={() => onSort('estadoDeCobro')} className={thClass}>
+                                Est. Cobro <SortIcon col="estadoDeCobro" />
+                            </th>
+                            <th onClick={() => onSort('dias')} className={`${thClass} text-center`}>
+                                Días <SortIcon col="dias" />
+                            </th>
                             <th className="p-2">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredInvoices.length === 0 ? <tr><td colSpan="10" className="p-4 text-center text-gray-500">No hay resultados</td></tr> :
-                            filteredInvoices.map((inv) => (
-                                <tr key={inv.id} className="border-b hover:bg-gray-50">
+                        {visibleRows.length === 0 ? <tr><td colSpan="11" className="p-4 text-center text-gray-500 dark:text-gray-400">No hay resultados</td></tr> :
+                            visibleRows.map((inv) => (
+                                <tr key={inv.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-800 dark:border-slate-700">
+                                    <td className="p-2 font-semibold text-gray-600 dark:text-gray-300">{inv.emisor}</td>
                                     <td className="p-2">
-                                        <div className="font-bold">{inv.nroFactura}</div>
-                                        <div className="font-mono text-gray-500">{inv.siniestro}</div>
+                                        <div className="font-bold dark:text-gray-200">{inv.nroFactura}</div>
+                                        <div className="font-mono text-gray-500 dark:text-gray-400">{inv.siniestro}</div>
                                     </td>
-                                    <td className="p-2">{inv.aseguradora}</td>
-                                    <td className="p-2 text-right">${inv.monto}</td>
-                                    <td className="p-2">{inv.fecha}</td>
-                                    <td className="p-2">{inv.analista}</td>
+                                    <td className="p-2 dark:text-gray-300">{inv.aseguradora}</td>
+                                    <td className="p-2 text-right dark:text-gray-300">${inv.monto}</td>
+                                    <td className="p-2 dark:text-gray-300">{inv.fecha}</td>
+                                    <td className="p-2 dark:text-gray-300">{inv.analista}</td>
 
-                                    <td className="p-2 font-bold text-[#355071]">${inv.totalAPagarAnalista?.toLocaleString('es-AR')}</td>
+                                    <td className="p-2 font-bold text-[#355071] dark:text-blue-300">${inv.totalAPagarAnalista?.toLocaleString('es-AR')}</td>
                                     <td className="p-2">
-                                        <span className={`px-2 py-1 rounded ${inv.estadoPago === 'PAGO' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                        <span className={`px-2 py-1 rounded ${inv.estadoPago === 'PAGO' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}`}>
                                             {inv.estadoPago}
                                         </span>
                                     </td>
@@ -299,7 +401,7 @@ const MasterTable = () => {
                                             <select
                                                 value={inv.estadoDeCobro || 'NO COBRADO'}
                                                 onChange={(e) => handleStateChange(inv.id, e.target.value)}
-                                                className={`border rounded p-1 text-[10px] font-bold ${inv.estadoDeCobro === 'COBRADO' ? 'text-green-700 bg-green-100' : 'text-[#d13737] bg-red-100'}`}
+                                                className={`border rounded p-1 text-[10px] font-bold ${inv.estadoDeCobro === 'COBRADO' ? 'text-green-700 bg-green-100 dark:bg-green-900 dark:text-green-200' : 'text-[#d13737] bg-red-100 dark:bg-red-900 dark:text-red-200'}`}
                                             >
                                                 <option value="NO COBRADO">NO COBRADO</option>
                                                 <option value="COBRADO">COBRADO</option>
@@ -315,19 +417,20 @@ const MasterTable = () => {
                                         </div>
                                     </td>
                                     <td className={`p-2 text-center font-bold ${inv.estadoDeCobro === 'COBRADO'
-                                        ? 'text-green-600'
-                                        : 'text-red-500'
+                                        ? 'text-green-600 dark:text-green-400'
+                                        : 'text-red-500 dark:text-red-400'
                                         }`}>
                                         {inv.estadoDeCobro === 'COBRADO'
-                                            ? daysBetween(inv.fecha, inv.fechaPago || new Date()) // Si esta cobrado usamos fecha de cobro (que deberia estar en fechaPago segun logica vieja? o hay que chequear store). El usuario dijo "fechaCobro".
+                                            // Usar logica identica al render previo
+                                            ? daysBetween(inv.fecha, inv.fechaPago || new Date())
                                             : daysBetween(inv.fecha, new Date())
                                         }
                                     </td>
                                     <td className="p-2 flex gap-1">
-                                        <button onClick={() => setEditingInvoice(inv)} className="p-1 text-[#355071] hover:bg-blue-50 rounded" title="Editar">
+                                        <button onClick={() => setEditingInvoice(inv)} className="p-1 text-[#355071] hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-slate-700 rounded" title="Editar">
                                             <Edit2 size={16} />
                                         </button>
-                                        <button onClick={() => handleDelete(inv.id)} className="p-1 text-gray-400 hover:text-red-600 rounded" title="Eliminar">
+                                        <button onClick={() => handleDelete(inv.id)} className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded" title="Eliminar">
                                             <Trash size={16} />
                                         </button>
                                     </td>

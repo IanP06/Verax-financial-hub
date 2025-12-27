@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
 import DropZone from './components/ingest/DropZone';
@@ -6,6 +6,7 @@ import StagingTable from './components/staging/StagingTable';
 import Dashboard from './components/dashboard/Dashboard';
 import Settings from './components/settings/Settings';
 import useInvoiceStore from './store/useInvoiceStore';
+import { applyTheme, getInitialTheme } from "./utils/theme";
 
 // === SMOKE TEST IMPORTS ===
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
@@ -14,10 +15,22 @@ import { db } from "./lib/firebase";
 
 function App() {
   const { initFromFirestore } = useInvoiceStore();
+  const [theme, setTheme] = useState("light");
 
   useEffect(() => {
     initFromFirestore();
+    const t = getInitialTheme();
+    setTheme(t);
+    applyTheme(t);
   }, [initFromFirestore]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      applyTheme(next);
+      return next;
+    });
+  };
 
   // === SMOKE TEST EFFECT ===
   useEffect(() => {
@@ -48,8 +61,8 @@ function App() {
 
   return (
     <Router>
-      <div className="flex min-h-screen bg-gray-100 font-sans text-gray-900">
-        <Sidebar />
+      <div className="flex min-h-screen bg-gray-100 font-sans text-gray-900 dark:bg-slate-950 dark:text-slate-100">
+        <Sidebar theme={theme} toggleTheme={toggleTheme} />
         <main className="flex-1 p-8 overflow-y-auto">
           <Routes>
             {/* REDIRECCIÓN INICIAL: Al entrar, ir a Ingesta (o Dashboard si prefieres) */}

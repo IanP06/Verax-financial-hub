@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, UploadCloud, FileSpreadsheet, Settings } from 'lucide-react';
 
-const Sidebar = () => {
+const Sidebar = ({ theme, toggleTheme }) => {
     const linkClasses = ({ isActive }) =>
         `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
             ? 'bg-[#355071] text-white shadow-md'
@@ -36,7 +36,21 @@ const Sidebar = () => {
             </nav>
 
             {/* Footer / Configuración */}
-            <div className="p-4 border-t border-gray-700">
+            <div className="p-4 border-t border-gray-700 space-y-2">
+                <div className="pt-2 border-t border-gray-700">
+                    <button
+                        onClick={toggleTheme}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-md
+                                     bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                        type="button"
+                    >
+                        <span className="text-sm">Modo Oscuro</span>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${theme === 'dark' ? 'bg-green-600 text-white' : 'bg-gray-600 text-gray-400'}`}>
+                            {theme === 'dark' ? 'ON' : 'OFF'}
+                        </span>
+                    </button>
+                </div>
+
                 <NavLink to="/settings" className={linkClasses}>
                     <Settings size={20} />
                     <span className="font-medium">Configuración</span>

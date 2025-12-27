@@ -31,7 +31,13 @@ const StagingTable = () => {
                             <th className="p-2 bg-blue-50">Viaticos</th>
                             <th className="p-2 bg-blue-100 font-bold">Total Analista</th>
 
-                            <th className="p-2">Resultado *</th>
+                            {/* Liquidación */}
+                            <th className="p-2 bg-blue-50">GESTION A PAGAR</th>
+                            <th className="p-2 bg-blue-50">Plus Ahorro</th>
+                            <th className="p-2 bg-blue-50">AHORRO A PAGAR</th>
+                            <th className="p-2 bg-blue-50">Viaticos</th>
+                            <th className="p-2 bg-blue-100 font-bold">Total Analista</th>
+
                             <th className="p-2">Acciones</th>
                         </tr>
                     </thead>
@@ -109,39 +115,15 @@ const StagingTable = () => {
                                         ${inv.totalAPagarAnalista?.toLocaleString('es-AR') || 0}
                                     </td>
 
-                                    {/* Resultado */}
-                                    <td className="p-2">
-                                        <select
-                                            value={inv.resultado || ''}
-                                            onChange={(e) => updateStagingInvoice(inv.id, 'resultado', e.target.value)}
-                                            className="border rounded p-1 w-24"
-                                        >
-                                            <option value="">...</option>
-                                            <option value="SIN INDICIOS">SIN INDICIOS</option>
-                                            <option value="RECHAZO">RECHAZO</option>
-                                            <option value="DESISTIDO">DESISTIDO</option>
-                                        </select>
-                                    </td>
-
-                                    {/* Estado Cobro (Ex Estado) */}
-                                    <td className="p-2">
-                                        <select
-                                            value={inv.estadoDeCobro || 'NO COBRADO'}
-                                            onChange={(e) => updateStagingInvoice(inv.id, 'estadoDeCobro', e.target.value)}
-                                            className={`border rounded p-1 w-24 text-xs font-bold ${inv.estadoDeCobro === 'COBRADO' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
-                                        >
-                                            <option value="NO COBRADO">NO COBRADO</option>
-                                            <option value="COBRADO">COBRADO</option>
-                                        </select>
-                                    </td>
+                                    {/* Estado Cobro (Ex Estado) - Moved logic here implicitely by removing Resultado column block and validation below */}
 
                                     {/* Acciones */}
                                     <td className="p-2">
                                         <div className="flex gap-1">
                                             <button
                                                 onClick={() => handleConfirm(inv.id)}
-                                                disabled={!inv.analista || !inv.resultado}
-                                                className={`p-1 rounded text-white ${(!inv.analista || !inv.resultado) ? 'bg-gray-300' : 'bg-[#355071] hover:bg-[#2c425e]'}`}
+                                                disabled={!inv.analista}
+                                                className={`p-1 rounded text-white ${(!inv.analista) ? 'bg-gray-300' : 'bg-[#355071] hover:bg-[#2c425e]'}`}
                                                 title="Confirmar"
                                             >
                                                 <Check size={16} />
