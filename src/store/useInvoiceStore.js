@@ -141,6 +141,130 @@ const useInvoiceStore = create(
                 }
             },
 
+            // --- BULK CHARGE LOGIC (PHASE 2) ---
+            previewBulkCobroByEmisor: async ({ emisorCuit, invoiceNumbers }) => {
+                const uniqueNumbers = [...new Set(invoiceNumbers)];
+                if (uniqueNumbers.length === 0) return { toCharge: [], alreadyPaid: [], notFound: [], duplicated: [] };
+
+                const toCharge = [];
+                const alreadyPaid = [];
+                const foundNumbers = new Set();
+
+                // Firestore "in" queries are limited to 10 items
+                const chunkSize = 10;
+                const chunks = [];
+                for (let i = 0; i < uniqueNumbers.length; i += chunkSize) {
+                    chunks.push(uniqueNumbers.slice(i, i + chunkSize));
+                }
+
+                try {
+                    const invoicesRef = collection(db, 'invoices');
+                    for (const chunk of chunks) {
+                        // Query by Emisor CUIT AND Invoice Number
+                        // IMPORTANT: Query requires composite index if not standard. 
+                        // If it fails, we might need to query by emisorCuit only and filter locally, but user asked for "where nroFactura in chunk"
+                        // Queries with 'in' and equality on other fields work.
+
+                        // NOTE: If invoices don't have 'emisorCuit', this returns empty.
+                        // We strictly follow the requirement: where("emisorCuit", "==", selectedCuit)
+                        const q = window.firestoreQuery // Helper to avoid import issues if needed, or just use direct functions
+                            ? window.firestoreQuery(invoicesRef, emisorCuit, chunk)
+                            : null; // We'll implement standard query below
+
+                        // Using standard firestore imports from top
+                        const { query, where, getDocs } = await import('firebase/firestore');
+                        const q2 = query(invoicesRef,
+                            where("emisorCuit", "==", emisorCuit),
+                            where("nroFactura", "in", chunk)
+                        );
+
+                        const snapshot = await getDocs(q2);
+                        snapshot.forEach(doc => {
+                            const inv = { ...doc.data(), id: doc.id };
+                            foundNumbers.add(inv.nroFactura);
+
+                            if (inv.estadoDeCobro === 'COBRADO') {
+                                alreadyPaid.push(inv);
+                            } else {
+                                toCharge.push(inv);
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.error("Error previewing bulk charge:", error);
+                    alert("Error consultando Firestore. Verifica que el campo emisorCuit exista en los documentos.");
+                    return { toCharge: [], alreadyPaid: [], notFound: [], duplicated: [] };
+                }
+
+                // Determine Not Found
+                const notFound = uniqueNumbers.filter(num => !foundNumbers.has(num));
+
+                // Determine Duplicates in Input (already handled by Set, but if user wants visual feedback of what was duped in input vs DB dups...)
+                // The requirements say "Duplicadas en input".
+                const duplicated = invoiceNumbers.filter((item, index) => invoiceNumbers.indexOf(item) !== index);
+
+                return { toCharge, alreadyPaid, notFound, duplicated: [...new Set(duplicated)] };
+            },
+
+            confirmBulkCobroByEmisor: async ({ emisorCuit, invoiceNumbers, fechaCobro }) => {
+                // Determine IDs to update. We'll reuse the preview logic or expect calls to pass IDs? 
+                // The prompt says input is "invoiceNumbers" + "emisorCuit". 
+                // Efficiently, we should might re-query or assume the user just previewed.
+                // To be safe and stateless, we re-query to get the DOC IDs.
+
+                const { toCharge } = await get().previewBulkCobroByEmisor({ emisorCuit, invoiceNumbers });
+
+                if (toCharge.length === 0) return { success: false, message: "No hay facturas pendientes para cobrar." };
+
+                const batchSize = 500;
+                const { writeBatch, doc } = await import('firebase/firestore');
+
+                // We might have more than 500, so we need to chunk batches
+                const batches = [];
+                let currentBatch = writeBatch(db);
+                let count = 0;
+
+                toCharge.forEach(inv => {
+                    const ref = doc(db, 'invoices', inv.id);
+                    // Update Logic: estadoDeCobro: "COBRADO", fechaCobro: selectedDate
+                    currentBatch.update(ref, {
+                        estadoDeCobro: 'COBRADO',
+                        fechaCobro: fechaCobro, // User requested field name "fechaCobro" here. 
+                        // Note: Previous logic used 'fechaPago' for real payment date. 
+                        // User prompt says: "NO tocar fechaPagoAnalista... This feature solo cambia estadoDeCobro y fechaCobro".
+                        // Wait, previous logic `updateInvoiceStatus` uses `fechaPago` for the real date. 
+                        // We should probably be consistent or STRICTLY follow "fechaCobro".
+                        // Prompt rule: "Update aplicado: { estadoDeCobro: 'COBRADO', fechaCobro: selectedDate }"
+                        // OK, I will use "fechaCobro".
+                    });
+                    count++;
+                    if (count >= batchSize) {
+                        batches.push(currentBatch);
+                        currentBatch = writeBatch(db);
+                        count = 0;
+                    }
+                });
+                if (count > 0) batches.push(currentBatch);
+
+                try {
+                    await Promise.all(batches.map(b => b.commit()));
+
+                    // Update Local State without full reload
+                    set(state => ({
+                        invoices: state.invoices.map(inv => {
+                            if (toCharge.some(tc => tc.id === inv.id)) {
+                                return { ...inv, estadoDeCobro: 'COBRADO', fechaCobro: fechaCobro };
+                            }
+                            return inv;
+                        })
+                    }));
+                    return { success: true, count: toCharge.length };
+                } catch (e) {
+                    console.error("Error en batch update:", e);
+                    return { success: false, message: e.message };
+                }
+            },
+
             // LÓGICA CRÍTICA DE CAMBIO DE ESTADO
             updateInvoiceStatus: async (id, nuevoEstado, fechaPagoReal = null) => {
                 const inv = get().invoices.find(i => i.id === id);

@@ -3,6 +3,7 @@ import useInvoiceStore from '../../store/useInvoiceStore';
 import { Trash, Download, Search, Edit2, Clock, FileText, CheckCircle, AlertTriangle, FileWarning } from 'lucide-react';
 import EditInvoiceModal from './EditInvoiceModal';
 import PaymentConfirmationModal from './PaymentConfirmationModal';
+import BulkChargeModal from './BulkChargeModal';
 
 const MasterTable = () => {
     const { invoices, updateInvoiceStatus, deleteInvoice, updateInvoice, analysts, config } = useInvoiceStore();
@@ -10,6 +11,7 @@ const MasterTable = () => {
     const [filters, setFilters] = useState({ aseguradora: '', estadoDeCobro: '', analista: '', estadoPago: '', fechaDesde: '', fechaHasta: '', mostrarVencidos: false });
     const [editingInvoice, setEditingInvoice] = useState(null);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [showBulkChargeModal, setShowBulkChargeModal] = useState(false);
     const [paymentSnapshot, setPaymentSnapshot] = useState({ ids: [], total: 0, count: 0 });
 
     // --- HELPERS DE ORDENAMIENTO (USER REQUEST) ---
@@ -284,6 +286,15 @@ const MasterTable = () => {
                     >
                         <Clock size={14} /> {filters.mostrarVencidos ? 'VER TODOS' : 'VER 40+ DÍAS'}
                     </button>
+
+                    {/* BUTTON: BULK CHARGE */}
+                    <button
+                        onClick={() => setShowBulkChargeModal(true)}
+                        className="flex items-center gap-1 bg-teal-600 text-white px-3 py-1.5 rounded hover:bg-teal-700 text-xs font-bold shadow"
+                    >
+                        <FileText size={14} /> REGISTRAR COBROS
+                    </button>
+
                     <button onClick={handleGeneratePaymentOrder} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 text-xs font-bold shadow">
                         <FileText size={14} /> GEN. ORDEN PAGO
                     </button>
@@ -335,6 +346,7 @@ const MasterTable = () => {
 
             {editingInvoice && <EditInvoiceModal invoice={editingInvoice} onClose={() => setEditingInvoice(null)} />}
             {showPaymentModal && <PaymentConfirmationModal count={paymentSnapshot.count} total={paymentSnapshot.total} onConfirm={handleConfirmPayment} onClose={() => setShowPaymentModal(false)} />}
+            {showBulkChargeModal && <BulkChargeModal onClose={() => setShowBulkChargeModal(false)} />}
 
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
