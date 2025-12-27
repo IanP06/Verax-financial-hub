@@ -70,67 +70,67 @@ const Dashboard = () => {
         <div className="p-6 space-y-8">
             {/* Header y Filtro Dashboard */}
             <div className="flex justify-between items-end">
-                <h1 className="text-2xl font-bold text-[#355071]">Dashboard Financiero</h1>
+                <h1 className="text-2xl font-bold text-[#355071] dark:text-blue-300">Dashboard Financiero</h1>
                 <div className="flex gap-2">
                     <select
-                        className="border p-2 rounded text-sm w-40"
+                        className="border p-2 rounded text-sm w-40 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
                         value={selectedCia}
                         onChange={e => setSelectedCia(e.target.value)}
                     >
                         <option value="">Todas las Cías</option>
                         {config?.validAseguradoras?.map(a => <option key={a.nombre} value={a.nombre}>{a.nombre}</option>)}
                     </select>
-                    <input type="date" className="border p-2 rounded text-sm" onChange={e => setDateRange({ ...dateRange, from: e.target.value })} />
-                    <input type="date" className="border p-2 rounded text-sm" onChange={e => setDateRange({ ...dateRange, to: e.target.value })} />
+                    <input type="date" className="border p-2 rounded text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white" onChange={e => setDateRange({ ...dateRange, from: e.target.value })} />
+                    <input type="date" className="border p-2 rounded text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white" onChange={e => setDateRange({ ...dateRange, to: e.target.value })} />
                 </div>
             </div>
 
             {/* Tarjetas KPI */}
             <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-                <div className="bg-white p-4 rounded shadow border-l-4 border-[#355071]">
-                    <p className="text-xs text-gray-500 uppercase">Total Facturado</p>
-                    <p className="text-2xl font-bold text-[#355071]">${totalFacturado.toLocaleString('es-AR')}</p>
+                <div className="bg-white dark:bg-slate-900 dark:border dark:border-slate-700 p-4 rounded shadow border-l-4 border-[#355071] dark:border-l-blue-400">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Total Facturado</p>
+                    <p className="text-2xl font-bold text-[#355071] dark:text-blue-300">${totalFacturado.toLocaleString('es-AR')}</p>
                 </div>
-                <div className="bg-white p-4 rounded shadow border-l-4 border-indigo-600">
-                    <p className="text-xs text-gray-500 uppercase">Total Liquidado</p>
-                    <p className="text-2xl font-bold text-indigo-700">${totalLiquidado.toLocaleString('es-AR')}</p>
+                <div className="bg-white dark:bg-slate-900 dark:border dark:border-slate-700 p-4 rounded shadow border-l-4 border-indigo-600 dark:border-l-indigo-400">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Total Liquidado</p>
+                    <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">${totalLiquidado.toLocaleString('es-AR')}</p>
                 </div>
-                <div className="bg-white p-4 rounded shadow border-l-4 border-green-600">
-                    <p className="text-xs text-gray-500 uppercase">Tasa de Cobro</p>
-                    <p className="text-2xl font-bold text-green-700">{tasaCobro}%</p>
+                <div className="bg-white dark:bg-slate-900 dark:border dark:border-slate-700 p-4 rounded shadow border-l-4 border-green-600 dark:border-l-green-400">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Tasa de Cobro</p>
+                    <p className="text-2xl font-bold text-green-700 dark:text-green-300">{tasaCobro}%</p>
                 </div>
-                <div className="bg-white p-4 rounded shadow border-l-4 border-orange-500">
-                    <p className="text-xs text-gray-500 uppercase">Promedio Días Cobro</p>
-                    <p className="text-2xl font-bold text-orange-600">{promedioDias} días</p>
+                <div className="bg-white dark:bg-slate-900 dark:border dark:border-slate-700 p-4 rounded shadow border-l-4 border-orange-500 dark:border-l-orange-400">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Promedio Días Cobro</p>
+                    <p className="text-2xl font-bold text-orange-600 dark:text-orange-300">{promedioDias} días</p>
                 </div>
-                <div className="bg-white p-4 rounded shadow border-l-4 border-[#1d2e3f]">
-                    <p className="text-xs text-gray-500 uppercase">Facturas Emitidas</p>
-                    <p className="text-2xl font-bold text-[#1d2e3f]">{filteredInvoices.length}</p>
+                <div className="bg-white dark:bg-slate-900 dark:border dark:border-slate-700 p-4 rounded shadow border-l-4 border-[#1d2e3f] dark:border-l-slate-400">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Facturas Emitidas</p>
+                    <p className="text-2xl font-bold text-[#1d2e3f] dark:text-slate-200">{filteredInvoices.length}</p>
                 </div>
-                <div className="bg-white p-4 rounded shadow border-l-4 border-red-500">
-                    <p className="text-xs text-gray-500 uppercase">Días Prom. Deuda</p>
-                    <p className="text-2xl font-bold text-red-600">{promedioDiasDeuda} días</p>
+                <div className="bg-white dark:bg-slate-900 dark:border dark:border-slate-700 p-4 rounded shadow border-l-4 border-red-500 dark:border-l-red-400">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Días Prom. Deuda</p>
+                    <p className="text-2xl font-bold text-red-600 dark:text-red-300">{promedioDiasDeuda} días</p>
                 </div>
             </div>
 
             {/* Gráficos */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white p-4 rounded shadow h-64">
-                    <h3 className="text-sm font-bold text-[#1d2e3f] mb-2">Por Emisor</h3>
+                <div className="bg-white dark:bg-slate-900 p-4 rounded shadow h-64 dark:text-slate-200">
+                    <h3 className="text-sm font-bold text-[#1d2e3f] dark:text-slate-200 mb-2">Por Emisor</h3>
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={dataEmisor}><XAxis dataKey="name" /><Tooltip /><Bar dataKey="total" fill="#355071" /></BarChart>
+                        <BarChart data={dataEmisor}><XAxis dataKey="name" stroke="#888888" /><Tooltip contentStyle={{ backgroundColor: '#1f2937', color: '#fff', borderColor: '#374151' }} /><Bar dataKey="total" fill="#355071" /></BarChart>
                     </ResponsiveContainer>
                 </div>
-                <div className="bg-white p-4 rounded shadow h-64">
-                    <h3 className="text-sm font-bold text-[#1d2e3f] mb-2">Por Aseguradora</h3>
+                <div className="bg-white dark:bg-slate-900 p-4 rounded shadow h-64 dark:text-slate-200">
+                    <h3 className="text-sm font-bold text-[#1d2e3f] dark:text-slate-200 mb-2">Por Aseguradora</h3>
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={dataAseguradora} layout="vertical"><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={80} style={{ fontSize: '10px' }} /><Tooltip /><Bar dataKey="total" fill="#d13737" /></BarChart>
+                        <BarChart data={dataAseguradora} layout="vertical"><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={80} style={{ fontSize: '10px' }} stroke="#888888" /><Tooltip contentStyle={{ backgroundColor: '#1f2937', color: '#fff', borderColor: '#374151' }} /><Bar dataKey="total" fill="#d13737" /></BarChart>
                     </ResponsiveContainer>
                 </div>
             </div>
 
             {/* AQUÍ ESTÁ LA BASE DE DATOS MAESTRA INTEGRADA */}
-            <div className="border-t pt-8">
+            <div className="border-t pt-8 dark:border-slate-700">
                 <MasterTable />
             </div>
         </div>

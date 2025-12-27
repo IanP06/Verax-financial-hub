@@ -44,40 +44,40 @@ const Settings = () => {
 
     return (
         <div className="p-6 max-w-4xl mx-auto space-y-8">
-            <h1 className="text-2xl font-bold text-[#355071] flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-[#355071] dark:text-blue-200 flex items-center gap-2">
                 <SettingsIcon /> Configuración del Sistema
             </h1>
 
             {/* SECCION 1: PARAMETROS FINANCIEROS */}
-            <section className="bg-white p-6 rounded shadow border-l-4 border-blue-600">
-                <h2 className="text-lg font-bold text-[#1d2e3f] mb-4 flex items-center gap-2">
+            <section className="bg-white dark:bg-slate-900 dark:border-slate-700 p-6 rounded shadow border-l-4 border-blue-600 dark:border-l-blue-400">
+                <h2 className="text-lg font-bold text-[#1d2e3f] dark:text-blue-200 mb-4 flex items-center gap-2">
                     <SettingsIcon size={20} /> Parámetros Globales
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2">Monto Gestión Default</label>
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Monto Gestión Default</label>
                         <div className="flex items-center gap-2">
-                            <span className="text-gray-500 font-bold">$</span>
+                            <span className="text-gray-500 dark:text-gray-400 font-bold">$</span>
                             <input
                                 type="number"
                                 value={localConfig.montoGestion}
                                 onChange={(e) => setLocalConfig({ ...localConfig, montoGestion: parseInt(e.target.value) || 0 })}
-                                className="border p-2 rounded w-full"
+                                className="border p-2 rounded w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                             />
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">Valor inicial para nuevas facturas.</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Valor inicial para nuevas facturas.</p>
                     </div>
                 </div>
             </section>
 
             {/* SECCION 2: COMPAÑIAS (SEEDS) */}
-            <section className="bg-white p-6 rounded shadow border-l-4 border-amber-500">
-                <h2 className="text-lg font-bold text-[#1d2e3f] mb-4 flex items-center gap-2">
+            <section className="bg-white dark:bg-slate-900 dark:border-slate-700 p-6 rounded shadow border-l-4 border-amber-500 dark:border-l-amber-400">
+                <h2 className="text-lg font-bold text-[#1d2e3f] dark:text-blue-200 mb-4 flex items-center gap-2">
                     <Clock size={20} /> Compañías & Plazos (Seeds)
                 </h2>
                 <div className="overflow-x-auto mb-4">
                     <table className="w-full text-left text-sm">
-                        <thead className="bg-gray-50 text-[#355071]">
+                        <thead className="bg-gray-50 dark:bg-slate-800 text-[#355071] dark:text-blue-200">
                             <tr>
                                 <th className="p-3">CUIT</th>
                                 <th className="p-3">Nombre</th>
@@ -88,7 +88,7 @@ const Settings = () => {
                         </thead>
                         <tbody>
                             {localConfig.validAseguradoras?.map((aseg, idx) => (
-                                <tr key={idx} className="border-b">
+                                <tr key={idx} className="border-b dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800">
                                     <td className="p-2">
                                         <input
                                             value={aseg.cuit}
@@ -97,7 +97,7 @@ const Settings = () => {
                                                 list[idx].cuit = e.target.value;
                                                 setLocalConfig({ ...localConfig, validAseguradoras: list });
                                             }}
-                                            className="border rounded p-1 w-28"
+                                            className="border rounded p-1 w-28 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                                             placeholder="30-..."
                                         />
                                     </td>
@@ -109,7 +109,7 @@ const Settings = () => {
                                                 list[idx].nombre = e.target.value.toUpperCase();
                                                 setLocalConfig({ ...localConfig, validAseguradoras: list });
                                             }}
-                                            className="border rounded p-1 w-full font-bold"
+                                            className="border rounded p-1 w-full font-bold dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                                         />
                                     </td>
                                     <td className="p-2">
@@ -121,7 +121,7 @@ const Settings = () => {
                                                 list[idx].dias = parseInt(e.target.value) || 0;
                                                 setLocalConfig({ ...localConfig, validAseguradoras: list });
                                             }}
-                                            className="border rounded p-1 w-16 text-center"
+                                            className="border rounded p-1 w-16 text-center dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                                         />
                                     </td>
                                     <td className="p-2">
@@ -133,7 +133,7 @@ const Settings = () => {
                                                 list[idx].tolerancia = parseInt(e.target.value) || 0;
                                                 setLocalConfig({ ...localConfig, validAseguradoras: list });
                                             }}
-                                            className="border rounded p-1 w-16 text-center"
+                                            className="border rounded p-1 w-16 text-center dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                                         />
                                     </td>
                                     <td className="p-2 text-center">
@@ -142,7 +142,7 @@ const Settings = () => {
                                                 const list = localConfig.validAseguradoras.filter((_, i) => i !== idx);
                                                 setLocalConfig({ ...localConfig, validAseguradoras: list });
                                             }}
-                                            className="text-red-500 hover:text-red-700"
+                                            className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                                         >
                                             <Trash size={16} />
                                         </button>
@@ -157,20 +157,20 @@ const Settings = () => {
                         ...localConfig,
                         validAseguradoras: [...(localConfig.validAseguradoras || []), { cuit: '', nombre: 'NUEVA', dias: 30, tolerancia: 3 }]
                     })}
-                    className="flex items-center gap-1 text-sm bg-amber-100 text-amber-800 px-3 py-1 rounded hover:bg-amber-200"
+                    className="flex items-center gap-1 text-sm bg-amber-100 text-amber-800 px-3 py-1 rounded hover:bg-amber-200 dark:bg-amber-900 dark:text-amber-200"
                 >
                     <Plus size={16} /> Agregar Compañía
                 </button>
             </section>
 
             {/* SECCION 3: EMISORES (SEEDS) */}
-            <section className="bg-white p-6 rounded shadow border-l-4 border-purple-500">
-                <h2 className="text-lg font-bold text-[#1d2e3f] mb-4 flex items-center gap-2">
+            <section className="bg-white dark:bg-slate-900 dark:border-slate-700 p-6 rounded shadow border-l-4 border-purple-500 dark:border-l-purple-400">
+                <h2 className="text-lg font-bold text-[#1d2e3f] dark:text-blue-200 mb-4 flex items-center gap-2">
                     <User size={20} /> Emisores & Alias (Seeds)
                 </h2>
                 <div className="overflow-x-auto mb-4">
                     <table className="w-full text-left text-sm">
-                        <thead className="bg-gray-50 text-[#355071]">
+                        <thead className="bg-gray-50 dark:bg-slate-800 text-[#355071] dark:text-blue-200">
                             <tr>
                                 <th className="p-3">Nombre Corto (ID)</th>
                                 <th className="p-3">Alias de Detección (Texto PDF)</th>
@@ -179,7 +179,7 @@ const Settings = () => {
                         </thead>
                         <tbody>
                             {localConfig.validEmisores?.map((emisor, idx) => (
-                                <tr key={idx} className="border-b">
+                                <tr key={idx} className="border-b dark:border-slate-700">
                                     <td className="p-2">
                                         <input
                                             value={emisor.nombre}
@@ -188,7 +188,7 @@ const Settings = () => {
                                                 list[idx].nombre = e.target.value.toUpperCase();
                                                 setLocalConfig({ ...localConfig, validEmisores: list });
                                             }}
-                                            className="border rounded p-1 w-32 font-bold"
+                                            className="border rounded p-1 w-32 font-bold dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                                         />
                                     </td>
                                     <td className="p-2">
@@ -199,7 +199,7 @@ const Settings = () => {
                                                 list[idx].alias = e.target.value.split(',').map(s => s.trim());
                                                 setLocalConfig({ ...localConfig, validEmisores: list });
                                             }}
-                                            className="border rounded p-1 w-full text-xs"
+                                            className="border rounded p-1 w-full text-xs dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                                             placeholder="Separa con comas..."
                                         />
                                     </td>
@@ -209,7 +209,7 @@ const Settings = () => {
                                                 const list = localConfig.validEmisores.filter((_, i) => i !== idx);
                                                 setLocalConfig({ ...localConfig, validEmisores: list });
                                             }}
-                                            className="text-red-500 hover:text-red-700"
+                                            className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                                         >
                                             <Trash size={16} />
                                         </button>
@@ -224,15 +224,15 @@ const Settings = () => {
                         ...localConfig,
                         validEmisores: [...(localConfig.validEmisores || []), { nombre: 'NUEVO', cuit: '', alias: [] }]
                     })}
-                    className="flex items-center gap-1 text-sm bg-purple-100 text-purple-800 px-3 py-1 rounded hover:bg-purple-200"
+                    className="flex items-center gap-1 text-sm bg-purple-100 text-purple-800 px-3 py-1 rounded hover:bg-purple-200 dark:bg-purple-900 dark:text-purple-200"
                 >
                     <Plus size={16} /> Agregar Emisor
                 </button>
             </section>
 
             {/* SECCION 3: ANALISTAS */}
-            <section className="bg-white p-6 rounded shadow border-l-4 border-green-600">
-                <h2 className="text-lg font-bold text-[#1d2e3f] mb-4 flex items-center gap-2">
+            <section className="bg-white dark:bg-slate-900 dark:border-slate-700 p-6 rounded shadow border-l-4 border-green-600 dark:border-l-green-400">
+                <h2 className="text-lg font-bold text-[#1d2e3f] dark:text-blue-200 mb-4 flex items-center gap-2">
                     <User size={20} /> Gestión de Analistas
                 </h2>
                 <div className="flex gap-2 mb-6">
@@ -241,7 +241,7 @@ const Settings = () => {
                         value={newAnalyst}
                         onChange={(e) => setNewAnalyst(e.target.value)}
                         placeholder="Nombre del nuevo analista..."
-                        className="flex-1 border p-2 rounded"
+                        className="flex-1 border p-2 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                     />
                     <button
                         onClick={handleAddAnalyst}
@@ -252,11 +252,11 @@ const Settings = () => {
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                     {analysts.map((name) => (
-                        <div key={name} className="flex justify-between items-center p-2 bg-gray-50 rounded border text-sm">
-                            <span className="font-medium text-[#1d2e3f] truncate">{name}</span>
+                        <div key={name} className="flex justify-between items-center p-2 bg-gray-50 dark:bg-slate-800 rounded border dark:border-slate-600 text-sm">
+                            <span className="font-medium text-[#1d2e3f] dark:text-slate-200 truncate">{name}</span>
                             <button
                                 onClick={() => removeAnalyst(name)}
-                                className="text-[#d13737] hover:bg-red-50 p-1 rounded"
+                                className="text-[#d13737] hover:bg-red-50 dark:hover:bg-red-900 p-1 rounded"
                             >
                                 <Trash size={16} />
                             </button>
