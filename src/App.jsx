@@ -7,12 +7,44 @@ import Dashboard from './components/dashboard/Dashboard';
 import Settings from './components/settings/Settings';
 import useInvoiceStore from './store/useInvoiceStore';
 
+// === SMOKE TEST IMPORTS ===
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "./lib/firebase";
+// ==========================
+
 function App() {
   const { initFromFirestore } = useInvoiceStore();
 
   useEffect(() => {
     initFromFirestore();
   }, [initFromFirestore]);
+
+  // === SMOKE TEST EFFECT ===
+  useEffect(() => {
+    const runSmokeTest = async () => {
+      console.log("=== FIRESTORE SMOKE TEST START ===");
+      console.log("ENV VITE_FIREBASE_PROJECT_ID:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
+      console.log("DB Initialized:", !!db);
+
+      try {
+        const docRef = await addDoc(collection(db, "smoke"), {
+          ok: true,
+          at: serverTimestamp(),
+          where: window.location.href,
+          userAgent: navigator.userAgent
+        });
+        console.log("✅ SMOKE WRITE OK. Doc ID:", docRef.id);
+      } catch (error) {
+        console.error("❌ SMOKE WRITE FAIL:", error);
+        console.error("Error Code:", error.code);
+        console.error("Error Message:", error.message);
+      }
+      console.log("=== FIRESTORE SMOKE TEST END ===");
+    };
+
+    runSmokeTest();
+  }, []);
+  // ========================
 
   return (
     <Router>
