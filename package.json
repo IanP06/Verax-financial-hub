@@ -12,6 +12,7 @@
   "dependencies": {
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "firebase": "^11.1.0",
     "lucide-react": "^0.556.0",
     "pdfjs-dist": "^5.4.449",
     "react": "^19.2.0",
