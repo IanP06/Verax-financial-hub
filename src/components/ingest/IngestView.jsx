@@ -1,21 +1,9 @@
 import React from 'react';
 import DropZone from './DropZone';
 import useInvoiceStore from '../../store/useInvoiceStore';
-import { CheckCircle, AlertCircle } from 'lucide-react';
 
-const IngestView = ({ onNavigateToStaging }) => {
-    const { addInvoices, config } = useInvoiceStore();
-    const [uploadStatus, setUploadStatus] = React.useState(null); // 'success' | 'error'
-
-    const handleInvoicesProcessed = (invoices) => {
-        addInvoices(invoices);
-        setUploadStatus('success');
-        // Optional: Auto-navigate to staging after short delay
-        setTimeout(() => {
-            if (onNavigateToStaging) onNavigateToStaging();
-        }, 1500);
-    };
-
+const IngestView = () => {
+    const { config } = useInvoiceStore();
     return (
         <div className="space-y-8">
             <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
@@ -24,14 +12,7 @@ const IngestView = ({ onNavigateToStaging }) => {
                     Sube tus archivos PDF de ARCA/AFIP aquí. El sistema extraerá automáticamente los datos clave.
                 </p>
 
-                <DropZone onInvoicesProcessed={handleInvoicesProcessed} config={config} />
-
-                {uploadStatus === 'success' && (
-                    <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center text-green-700 animate-fade-in">
-                        <CheckCircle className="mr-3" size={20} />
-                        <span>Facturas procesadas correctamente. Redirigiendo a Staging...</span>
-                    </div>
-                )}
+                <DropZone config={config} />
             </div>
 
             {/* Instructions / Tips */}
