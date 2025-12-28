@@ -141,101 +141,85 @@ const useInvoiceStore = create(
                 }
             },
 
-            // --- BULK CHARGE LOGIC (PHASE 2) ---
-            previewBulkCobroByEmisor: async ({ emisorCuit, invoiceNumbers }) => {
-                const uniqueNumbers = [...new Set(invoiceNumbers)];
+            // --- BULK CHARGE LOGIC (PHASE 2 - FIXES) ---
+            previewBulkCobroByEmisor: async ({ emisorName, invoiceNumbers }) => {
+                const uniqueNumbers = [...new Set(invoiceNumbers)]; // Normalized strings "976", "977"
                 if (uniqueNumbers.length === 0) return { toCharge: [], alreadyPaid: [], notFound: [], duplicated: [] };
 
                 const toCharge = [];
                 const alreadyPaid = [];
                 const foundNumbers = new Set();
 
-                // Firestore "in" queries are limited to 10 items
-                const chunkSize = 10;
-                const chunks = [];
-                for (let i = 0; i < uniqueNumbers.length; i += chunkSize) {
-                    chunks.push(uniqueNumbers.slice(i, i + chunkSize));
-                }
-
                 try {
+                    // NEW STRATEGY: Fetch all invoices for the Emisor, then filter in memory.
+                    // Ideally we'd use 'in' query on nroFactura, but without emisorCuit reliable, 
+                    // and since 'emisor' (Name) is indexed/simple, this is safer.
+                    // If Emisor has THOUSANDS of invoices, this might be heavy, but for this use case likely fine.
+                    // Alternative: Chunked 'in' queries on nroFactura directly + client filter by emisor.
+                    // Let's try Chunked 'in' query on nroFactura, AND client filter by Emisor.
+                    // This avoids downloading ALL emisor history if legal.
+                    // ACTUALLY: nroFactura is not unique across system, but high cardinality.
+                    // Let's stick to the prompt suggestion: "Primero traer dataset por emisor con query barata: query(invoicesRef, where('emisor','==', selectedEmisorId))"
+
                     const invoicesRef = collection(db, 'invoices');
-                    for (const chunk of chunks) {
-                        // Query by Emisor CUIT AND Invoice Number
-                        // IMPORTANT: Query requires composite index if not standard. 
-                        // If it fails, we might need to query by emisorCuit only and filter locally, but user asked for "where nroFactura in chunk"
-                        // Queries with 'in' and equality on other fields work.
+                    const { query, where, getDocs } = await import('firebase/firestore');
 
-                        // NOTE: If invoices don't have 'emisorCuit', this returns empty.
-                        // We strictly follow the requirement: where("emisorCuit", "==", selectedCuit)
-                        const q = window.firestoreQuery // Helper to avoid import issues if needed, or just use direct functions
-                            ? window.firestoreQuery(invoicesRef, emisorCuit, chunk)
-                            : null; // We'll implement standard query below
+                    // Fetch by Emisor Name (ID)
+                    const q = query(invoicesRef, where("emisor", "==", emisorName));
+                    const snapshot = await getDocs(q);
 
-                        // Using standard firestore imports from top
-                        const { query, where, getDocs } = await import('firebase/firestore');
-                        const q2 = query(invoicesRef,
-                            where("emisorCuit", "==", emisorCuit),
-                            where("nroFactura", "in", chunk)
-                        );
+                    snapshot.forEach(doc => {
+                        const inv = { ...doc.data(), id: doc.id };
+                        // Normalize inv.nroFactura (just in case DB has zeros)
+                        const dbNum = String(parseInt(inv.nroFactura, 10));
 
-                        const snapshot = await getDocs(q2);
-                        snapshot.forEach(doc => {
-                            const inv = { ...doc.data(), id: doc.id };
-                            foundNumbers.add(inv.nroFactura);
+                        if (uniqueNumbers.includes(dbNum)) {
+                            foundNumbers.add(dbNum); // Track which inputs were found
+                            // Logic: If input "0976" matches "976", it's a match.
 
+                            // Check Status
                             if (inv.estadoDeCobro === 'COBRADO') {
-                                alreadyPaid.push(inv);
+                                // Prevent duplicates in array if multiple DB docs match same number (unlikely per spec but possible)
+                                if (!alreadyPaid.some(x => x.id === inv.id)) alreadyPaid.push(inv);
                             } else {
-                                toCharge.push(inv);
+                                if (!toCharge.some(x => x.id === inv.id)) toCharge.push(inv);
                             }
-                        });
-                    }
+                        }
+                    });
+
                 } catch (error) {
                     console.error("Error previewing bulk charge:", error);
-                    alert("Error consultando Firestore. Verifica que el campo emisorCuit exista en los documentos.");
+                    alert("Error consultando Firestore.");
                     return { toCharge: [], alreadyPaid: [], notFound: [], duplicated: [] };
                 }
 
                 // Determine Not Found
+                // We check which of uniqueNumbers were NOT in foundNumbers
+                // Note: uniqueNumbers are already normalized strings.
                 const notFound = uniqueNumbers.filter(num => !foundNumbers.has(num));
 
-                // Determine Duplicates in Input (already handled by Set, but if user wants visual feedback of what was duped in input vs DB dups...)
-                // The requirements say "Duplicadas en input".
+                // Duplicate inputs check (visual only)
                 const duplicated = invoiceNumbers.filter((item, index) => invoiceNumbers.indexOf(item) !== index);
 
                 return { toCharge, alreadyPaid, notFound, duplicated: [...new Set(duplicated)] };
             },
 
-            confirmBulkCobroByEmisor: async ({ emisorCuit, invoiceNumbers, fechaCobro }) => {
-                // Determine IDs to update. We'll reuse the preview logic or expect calls to pass IDs? 
-                // The prompt says input is "invoiceNumbers" + "emisorCuit". 
-                // Efficiently, we should might re-query or assume the user just previewed.
-                // To be safe and stateless, we re-query to get the DOC IDs.
-
-                const { toCharge } = await get().previewBulkCobroByEmisor({ emisorCuit, invoiceNumbers });
-
-                if (toCharge.length === 0) return { success: false, message: "No hay facturas pendientes para cobrar." };
+            confirmBulkCobroByEmisor: async ({ docIds, fechaCobro }) => {
+                // Now accepts docIds directly to be safe and atomic based on preview
+                if (!docIds || docIds.length === 0) return { success: false, message: "No ids provided." };
 
                 const batchSize = 500;
                 const { writeBatch, doc } = await import('firebase/firestore');
 
-                // We might have more than 500, so we need to chunk batches
                 const batches = [];
                 let currentBatch = writeBatch(db);
                 let count = 0;
 
-                toCharge.forEach(inv => {
-                    const ref = doc(db, 'invoices', inv.id);
-                    // Update Logic: estadoDeCobro: "COBRADO", fechaCobro: selectedDate
+                docIds.forEach(id => {
+                    const ref = doc(db, 'invoices', id);
                     currentBatch.update(ref, {
                         estadoDeCobro: 'COBRADO',
-                        fechaCobro: fechaCobro, // User requested field name "fechaCobro" here. 
-                        // Note: Previous logic used 'fechaPago' for real payment date. 
-                        // User prompt says: "NO tocar fechaPagoAnalista... This feature solo cambia estadoDeCobro y fechaCobro".
-                        // Wait, previous logic `updateInvoiceStatus` uses `fechaPago` for the real date. 
-                        // We should probably be consistent or STRICTLY follow "fechaCobro".
-                        // Prompt rule: "Update aplicado: { estadoDeCobro: 'COBRADO', fechaCobro: selectedDate }"
-                        // OK, I will use "fechaCobro".
+                        fechaCobro: fechaCobro
                     });
                     count++;
                     if (count >= batchSize) {
@@ -249,16 +233,16 @@ const useInvoiceStore = create(
                 try {
                     await Promise.all(batches.map(b => b.commit()));
 
-                    // Update Local State without full reload
+                    // Update Local State
                     set(state => ({
                         invoices: state.invoices.map(inv => {
-                            if (toCharge.some(tc => tc.id === inv.id)) {
+                            if (docIds.includes(inv.id)) {
                                 return { ...inv, estadoDeCobro: 'COBRADO', fechaCobro: fechaCobro };
                             }
                             return inv;
                         })
                     }));
-                    return { success: true, count: toCharge.length };
+                    return { success: true, count: docIds.length };
                 } catch (e) {
                     console.error("Error en batch update:", e);
                     return { success: false, message: e.message };

@@ -5,29 +5,41 @@ import useInvoiceStore from '../../store/useInvoiceStore';
 const BulkChargeModal = ({ onClose }) => {
     const { config, previewBulkCobroByEmisor, confirmBulkCobroByEmisor } = useInvoiceStore();
     const [step, setStep] = useState(1); // 1: Input, 2: Preview
-    const [selectedEmisorCuit, setSelectedEmisorCuit] = useState('');
+    const [selectedEmisorName, setSelectedEmisorName] = useState('');
     const [invoiceNumbersText, setInvoiceNumbersText] = useState('');
     const [fechaCobro, setFechaCobro] = useState(new Date().toISOString().split('T')[0]);
     const [previewData, setPreviewData] = useState(null);
     const [loading, setLoading] = useState(false);
 
     // Helpers
-    const getEmisorLabel = (e) => `${e.nombre} (${e.cuit || 'S/C'})`;
+    const getEmisorLabel = (e) => {
+        // Find if any custom Alias is CUIT-like
+        // Actually, 'cuit' field is not directly in emisor object in `validEmisores` seed based on reading code...
+        // Wait, looking at Settings.jsx, validEmisores has { nombre, alias: [] }. 
+        // It does NOT have a top-level 'cuit' field. The user prompt says "alias de Detección (Texto PDF) = CUIT".
+        // SO checking if there is a CUIT-like string in alias array.
+        const cuitAlias = e.alias?.find(a => /^\d{11}$/.test(a.replace(/-/g, '')));
+        return `${e.nombre} (${cuitAlias || 'S/C'})`;
+    };
 
     const handlePreview = async () => {
-        if (!selectedEmisorCuit) return alert("Selecciona un emisor.");
+        if (!selectedEmisorName) return alert("Selecciona un emisor.");
         if (!invoiceNumbersText.trim()) return alert("Ingresa números de factura.");
 
         setLoading(true);
-        // Clean and Split Input
-        const numbers = invoiceNumbersText
-            .split(/[\n,;]+/) // Split by newline, comma, semicolon
-            .map(s => s.trim())
-            .filter(s => s.length > 0);
+        // FIX: Parse logic as requested
+        const rawTokens = invoiceNumbersText.match(/\d+/g) || [];
+        // Normalize: parseInt to remove leading zeros, then String
+        const normalizedNumbers = [...new Set(rawTokens.map(t => String(parseInt(t, 10))))];
+
+        if (normalizedNumbers.length === 0) {
+            setLoading(false);
+            return alert("No se encontraron números válidos.");
+        }
 
         const result = await previewBulkCobroByEmisor({
-            emisorCuit: selectedEmisorCuit,
-            invoiceNumbers: numbers
+            emisorName: selectedEmisorName,
+            invoiceNumbers: normalizedNumbers
         });
 
         setPreviewData(result);
@@ -38,18 +50,15 @@ const BulkChargeModal = ({ onClose }) => {
     const handleConfirm = async () => {
         if (!previewData || previewData.toCharge.length === 0) return;
 
-        const emisorObj = config.validEmisores.find(e => e.cuit === selectedEmisorCuit);
-        const emisorName = emisorObj ? emisorObj.nombre : 'Desconocido';
-
-        if (!window.confirm(`¿Confirmás marcar como COBRADAS ${previewData.toCharge.length} facturas del emisor ${emisorName} con fecha ${fechaCobro}?`)) {
+        if (!window.confirm(`¿Confirmás marcar como COBRADAS ${previewData.toCharge.length} facturas del emisor ${selectedEmisorName} con fecha ${fechaCobro}?`)) {
             return;
         }
 
         setLoading(true);
-        const numbers = previewData.toCharge.map(i => i.nroFactura);
+        // Only valid ones
+        const ids = previewData.toCharge.map(i => i.id);
         const res = await confirmBulkCobroByEmisor({
-            emisorCuit: selectedEmisorCuit,
-            invoiceNumbers: numbers,
+            docIds: ids, // Pass IDs directly to be safe
             fechaCobro
         });
 
@@ -84,17 +93,17 @@ const BulkChargeModal = ({ onClose }) => {
                                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">1. Seleccionar Emisor</label>
                                 <select
                                     className="w-full border p-2 rounded dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                                    value={selectedEmisorCuit}
-                                    onChange={e => setSelectedEmisorCuit(e.target.value)}
+                                    value={selectedEmisorName}
+                                    onChange={e => setSelectedEmisorName(e.target.value)}
                                 >
                                     <option value="">-- Seleccionar --</option>
                                     {config?.validEmisores?.map((e, idx) => (
-                                        <option key={idx} value={e.cuit || e.nombre}>
+                                        <option key={idx} value={e.nombre}>
                                             {getEmisorLabel(e)}
                                         </option>
                                     ))}
                                 </select>
-                                {!selectedEmisorCuit && <p className="text-xs text-amber-600 mt-1">Asegurate de que el Emisor tenga CUIT configurado en settings.</p>}
+                                <p className="text-xs text-gray-400 mt-1">Se mostrará el CUIT detectado en los alias del emisor.</p>
                             </div>
 
                             <div>
@@ -111,11 +120,11 @@ const BulkChargeModal = ({ onClose }) => {
                                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">3. Números de Factura</label>
                                 <textarea
                                     className="w-full border p-2 rounded h-40 font-mono text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                                    placeholder={`1023\n1024, 1025\n1026`}
+                                    placeholder={`976, 977, 978\n979 980`}
                                     value={invoiceNumbersText}
                                     onChange={e => setInvoiceNumbersText(e.target.value)}
                                 />
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Acepta coma, espacio o salto de línea.</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Acepta coma, espacio o salto de línea. Se normalizan automáticamente.</p>
                             </div>
                         </div>
                     )}
@@ -142,14 +151,23 @@ const BulkChargeModal = ({ onClose }) => {
                             {previewData.toCharge.length > 0 && (
                                 <div>
                                     <h4 className="text-sm font-bold text-green-700 dark:text-green-400 mb-2 border-b">Detalle A Cobrar</h4>
-                                    <div className="max-h-32 overflow-y-auto text-xs border rounded dark:border-slate-700">
-                                        <table className="w-full text-left bg-white dark:bg-slate-800">
+                                    <div className="max-h-48 overflow-y-auto text-xs border rounded dark:border-slate-700">
+                                        <table className="w-full text-left bg-white dark:bg-slate-800 select-text">
+                                            <thead>
+                                                <tr className="bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300">
+                                                    <th className="p-2">Factura</th>
+                                                    <th className="p-2">Siniestro</th>
+                                                    <th className="p-2 text-right">Monto</th>
+                                                    <th className="p-2">Emisión</th>
+                                                </tr>
+                                            </thead>
                                             <tbody>
                                                 {previewData.toCharge.map(inv => (
                                                     <tr key={inv.id} className="border-b dark:border-slate-700">
-                                                        <td className="p-2 dark:text-gray-300">{inv.nroFactura}</td>
-                                                        <td className="p-2 dark:text-gray-300">${inv.monto}</td>
-                                                        <td className="p-2 dark:text-gray-300">{inv.aseguradora}</td>
+                                                        <td className="p-2 font-bold dark:text-white">{inv.nroFactura}</td>
+                                                        <td className="p-2 dark:text-gray-300">{inv.siniestro}</td>
+                                                        <td className="p-2 text-right dark:text-gray-300">${inv.monto}</td>
+                                                        <td className="p-2 dark:text-gray-400">{inv.fecha}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -159,9 +177,17 @@ const BulkChargeModal = ({ onClose }) => {
                             )}
 
                             {(previewData.notFound.length > 0 || previewData.duplicated.length > 0) && (
-                                <div className="text-xs text-gray-500 bg-gray-100 dark:bg-slate-800 dark:text-gray-400 p-2 rounded">
-                                    {previewData.notFound.length > 0 && <p>No encontradas: {previewData.notFound.join(', ')}</p>}
-                                    {previewData.duplicated.length > 0 && <p>Duplicadas en input: {previewData.duplicated.join(', ')}</p>}
+                                <div className="text-xs space-y-2">
+                                    {previewData.notFound.length > 0 && (
+                                        <div className="p-2 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded">
+                                            <strong>No Encontradas ({previewData.notFound.length}):</strong> {previewData.notFound.join(', ')}
+                                        </div>
+                                    )}
+                                    {previewData.duplicated.length > 0 && (
+                                        <div className="p-2 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 rounded">
+                                            <strong>Duplicadas en Input:</strong> {previewData.duplicated.join(', ')}
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -182,7 +208,7 @@ const BulkChargeModal = ({ onClose }) => {
                             <button onClick={onClose} className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800">Cancelar</button>
                             <button
                                 onClick={handlePreview}
-                                disabled={loading}
+                                disabled={loading || !selectedEmisorName || !invoiceNumbersText}
                                 className="bg-[#355071] text-white px-4 py-2 rounded hover:bg-[#2c425e] flex items-center gap-2 disabled:opacity-50"
                             >
                                 {loading && <Loader className="animate-spin" size={16} />}
