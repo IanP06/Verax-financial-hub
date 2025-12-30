@@ -34,23 +34,11 @@ const StatCard = ({ title, value, subtext, icon: Icon, color }) => (
 
 const AnalystDashboard = () => {
     const { user, userProfile } = useAuth();
-    const { fetchAnalystData, analystInvoices, getStats } = useAnalystStore();
+    const { analystInvoices, getStats } = useAnalystStore();
     const [selectedIds, setSelectedIds] = useState([]);
     const [isCashoutModalOpen, setCashoutModalOpen] = useState(false);
 
-    useEffect(() => {
-        let unsubscribe = () => { };
 
-        if (user?.uid && (userProfile?.analystKey || userProfile?.displayName)) {
-            const key = userProfile.analystKey || userProfile.displayName;
-            // Use Subscribe instead of Fetch
-            unsubscribe = useAnalystStore.getState().subscribeToAnalystData(user.uid, key);
-        }
-
-        return () => {
-            unsubscribe && unsubscribe();
-        };
-    }, [user, userProfile]);
 
     const stats = getStats();
 

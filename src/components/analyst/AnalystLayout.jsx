@@ -5,23 +5,28 @@ import useAnalystStore from '../../store/useAnalystStore';
 import Sidebar from '../layout/Sidebar';
 
 const AnalystLayout = ({ theme, toggleTheme }) => {
-    const { user, logout } = useAuth();
-    const { fetchAnalystData } = useAnalystStore();
+    const { user, userProfile, logout } = useAuth();
+    // Removed fetchAnalystData
 
     useEffect(() => {
-        if (user?.uid) {
-            // Determine the key to use for querying
-            // Priority: profile.analystKey > profile.displayName > auth.displayName
-            const keyToUse = user.analystKey || user.displayName;
-            // console.log(`[AnalystLayout] Fetching data for UID: ${user.uid} using Key: ${keyToUse}`);
+        let unsubscribe = () => { };
 
-            if (keyToUse) {
-                fetchAnalystData(user.uid, keyToUse);
-            } else {
-                console.warn("[AnalystLayout] No analyst key identifier found for user");
+        if (user?.uid && (userProfile?.analystKey || userProfile?.displayName)) {
+            const keyToUse = userProfile.analystKey || userProfile.displayName;
+
+            // Subscribe strictly once
+            unsubscribe = useAnalystStore.getState().subscribeToAnalystData(user.uid, keyToUse);
+
+            if (typeof unsubscribe !== 'function') {
+                console.warn("[AnalystLayout] Subscription return is not a function:", unsubscribe);
+                unsubscribe = () => { }; // Safety
             }
         }
-    }, [user, fetchAnalystData]);
+
+        return () => {
+            if (typeof unsubscribe === 'function') unsubscribe();
+        };
+    }, [user, userProfile]);
 
     return (
         <div className="flex min-h-screen bg-gray-50 font-sans text-gray-900 dark:bg-slate-950 dark:text-slate-100">
