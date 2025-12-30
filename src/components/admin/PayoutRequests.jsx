@@ -45,6 +45,7 @@ const PayoutRequests = () => {
             // 1. Update Request
             const updates = {
                 status: nextStatus,
+                invoiceStatus: needsInvoice ? 'REQUIRED' : 'NOT_REQUIRED', // [NEW]
                 approvedAt: serverTimestamp(),
                 history: arrayUnion({
                     at: new Date().toISOString(),
@@ -53,12 +54,6 @@ const PayoutRequests = () => {
                     note: `Aprobado. Estado: ${nextStatus}`
                 })
             };
-
-            // Schedule payment date defaults?
-            if (!needsInvoice) {
-                // READY_TO_PAY
-                // Maybe set a default scheduled date?
-            }
 
             batch.update(reqRef, updates);
 
@@ -82,6 +77,48 @@ const PayoutRequests = () => {
             fetchRequests();
         } catch (e) {
             console.error("Error approving:", e);
+        }
+    };
+
+    const handleVerifyInvoice = async (req) => {
+        if (!confirm("¿Marcar comprobante como VERIFICADO? Esto habilitará el pago.")) return;
+
+        try {
+            const { writeBatch, arrayUnion } = await import('firebase/firestore');
+            const batch = writeBatch(db);
+            const reqRef = doc(db, 'payoutRequests', req.id);
+
+            // Transition to READY_TO_PAY
+            batch.update(reqRef, {
+                status: 'READY_TO_PAY',
+                invoiceStatus: 'VERIFIED',
+                verifiedAt: serverTimestamp(),
+                history: arrayUnion({
+                    at: new Date().toISOString(),
+                    byRole: 'admin',
+                    action: 'INVOICE_VERIFIED',
+                    note: 'Comprobante verificado por admin. Listo para pagar.'
+                })
+            });
+
+            // Update Invoices to PENDIENTE_PAGO (Ready)
+            if (req.invoiceIds) {
+                req.invoiceIds.forEach(invId => {
+                    batch.update(doc(db, 'invoices', invId), {
+                        estadoPago: 'PENDIENTE_PAGO',
+                        paymentStatus: 'PENDIENTE_PAGO'
+                    });
+                    batch.update(doc(db, `analyst_invoices/${req.analystUid}/items`, invId), {
+                        paymentStatus: 'PENDIENTE_PAGO',
+                        estadoPago: 'PENDIENTE_PAGO'
+                    });
+                });
+            }
+
+            await batch.commit();
+            fetchRequests();
+        } catch (e) {
+            console.error("Error verifying invoice:", e);
         }
     };
 
@@ -242,22 +279,30 @@ const PayoutRequests = () => {
                                         )}
 
                                         {(req.status === 'NEEDS_INVOICE' || req.status === 'PENDIENTE_FACTURA') && (
-                                            <div className="flex items-center gap-2">
-                                                {/* INVOICE UPLOADED LOGIC */}
-                                                {req.invoiceReceipt?.url ? (
+                                            <div className="flex flex-col items-end gap-2">
+                                                {/* INVOICE STATUS */}
+                                                {req.invoiceStatus === 'UPLOADED' ? (
                                                     <div className="flex items-center gap-2">
+                                                        <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">
+                                                            COMPROBANTE SUBIDO
+                                                        </span>
                                                         <a
-                                                            href={req.invoiceReceipt.url}
+                                                            href={req.invoiceReceipt?.url}
                                                             target="_blank"
                                                             rel="noreferrer"
-                                                            className="text-blue-600 underline font-medium"
+                                                            className="text-xs text-blue-600 underline"
                                                         >
-                                                            Descargar Factura C ({req.invoiceReceipt.fileName})
+                                                            Ver PDF
                                                         </a>
-                                                        {/* Force Pay if receipt exists - typically goes to READY_TO_PAY first though */}
+                                                        <button
+                                                            onClick={() => handleVerifyInvoice(req)}
+                                                            className="px-3 py-1 text-xs font-bold text-white bg-green-600 rounded hover:bg-green-700"
+                                                        >
+                                                            Verificar
+                                                        </button>
                                                     </div>
                                                 ) : (
-                                                    <span className="text-orange-600 italic font-medium bg-orange-50 px-2 py-1 rounded border border-orange-200">
+                                                    <span className="text-xs text-orange-600 italic font-medium bg-orange-50 px-2 py-1 rounded border border-orange-200">
                                                         Esperando comprobante...
                                                     </span>
                                                 )}
@@ -266,11 +311,18 @@ const PayoutRequests = () => {
 
                                         {(req.status === 'READY_TO_PAY' || req.status === 'PENDIENTE_PAGO' || req.status === 'APPROVED_SCHEDULED') && (
                                             <div className="flex items-center gap-2">
-                                                {/* If they had receipt, show logic */}
+                                                {/* If verification done */}
+                                                {req.invoiceStatus === 'VERIFIED' && (
+                                                    <span className="text-xs font-bold text-green-700 bg-green-50 px-2 py-1 rounded border border-green-200">
+                                                        VERIFICADO
+                                                    </span>
+                                                )}
+
                                                 {req.invoiceReceipt?.url && (
                                                     <a href={req.invoiceReceipt.url} target="_blank" rel="noreferrer" className="text-xs text-blue-500 underline mr-2">Ver F.C</a>
                                                 )}
-                                                <button onClick={() => handleMarkAsPaid(req)} className="text-green-600 font-medium flex items-center">
+
+                                                <button onClick={() => handleMarkAsPaid(req)} className="text-green-600 font-medium flex items-center bg-green-50 px-3 py-1 rounded hover:bg-green-100">
                                                     <DollarSign className="w-4 h-4 mr-1" /> Pagar
                                                 </button>
                                             </div>

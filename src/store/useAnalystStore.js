@@ -178,7 +178,8 @@ const useAnalystStore = create((set, get) => ({
                 invoiceSnapshot: invoiceSnapshot,
                 totalAmount: totalAmount,
                 expiresAt: null,
-                requiresInvoiceSnapshot: !!requiresInvoice, // Snapshot the rule state at creation time
+                requiresInvoiceSnapshot: !!requiresInvoice,
+                invoiceStatus: requiresInvoice ? 'REQUIRED' : 'NOT_REQUIRED', // [NEW] Flow Control
                 invoiceReceipt: null,
                 history: [
                     {
@@ -198,7 +199,7 @@ const useAnalystStore = create((set, get) => ({
                 const invRef = doc(db, 'invoices', invId);
                 batch.update(invRef, {
                     estadoPago: 'PENDIENTE_APROBACION',
-                    paymentStatus: 'PENDIENTE_APROBACION', // Ensure consistent alias
+                    paymentStatus: 'PENDIENTE_APROBACION',
                     linkedPayoutRequestId: requestId,
                     payoutRequestedAt: serverTimestamp()
                 });
@@ -228,14 +229,8 @@ const useAnalystStore = create((set, get) => ({
     uploadInvoiceReceipt: async (requestId, file, analystUid) => {
         set({ loading: true });
         try {
-            // 1. Upload File (Client-side usage of Firebase Storage would be ideal here calling a service, 
-            // but we can assume a helper or do it here if we import storage).
-            // For now, let's assume the component uploads and passes the URL, OR we implement simple upload locally.
-            // The prompt says "Usar Firebase Storage (si ya está)".
-            // Let's implement full upload here if we can import getStorage.
-
             const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
-            const { updateDoc, arrayUnion } = await import('firebase/firestore');
+            const { updatedoc, arrayUnion } = await import('firebase/firestore'); // ensure imports
 
             const storage = getStorage();
             const storageRef = ref(storage, `payout_receipts/${requestId}/${file.name}`);
@@ -246,17 +241,19 @@ const useAnalystStore = create((set, get) => ({
             // 2. Update Request
             const reqRef = doc(db, 'payoutRequests', requestId);
 
-            // Fetch request to get invoiceIds (for updating invoices)
+            // Fetch request 
             const reqSnap = await getDoc(reqRef);
             if (!reqSnap.exists()) throw new Error("Solicitud no encontrada");
-            const reqData = reqSnap.data();
+            // const reqData = reqSnap.data(); // Not strictly needed unless logic depends on it
 
             const { writeBatch } = await import('firebase/firestore');
             const batch = writeBatch(db);
 
             // Request Update
+            // NOTE: Status remains NEEDS_INVOICE until Verified.
             batch.update(reqRef, {
-                status: 'READY_TO_PAY', // Flow Step 4: Analista sube comp -> READY_TO_PAY
+                // status: 'READY_TO_PAY', // REMOVED: Wait for Verification
+                invoiceStatus: 'UPLOADED', // [NEW]
                 invoiceReceipt: {
                     url: url,
                     fileName: file.name,
@@ -266,26 +263,14 @@ const useAnalystStore = create((set, get) => ({
                 },
                 history: arrayUnion({
                     at: new Date().toISOString(),
-                    action: 'RECEIPT_UPLOADED',
+                    action: 'INVOICE_UPLOADED',
                     note: `Factura subida: ${file.name}`
                 })
             });
 
-            // 3. Update Invoices (Main + Mirror) -> PENDIENTE_PAGO
-            if (reqData.invoiceIds && reqData.invoiceIds.length > 0) {
-                reqData.invoiceIds.forEach(invId => {
-                    // Main
-                    batch.update(doc(db, 'invoices', invId), {
-                        estadoPago: 'PENDIENTE_PAGO',
-                        paymentStatus: 'PENDIENTE_PAGO'
-                    });
-                    // Mirror
-                    batch.update(doc(db, `analyst_invoices/${analystUid}/items`, invId), {
-                        paymentStatus: 'PENDIENTE_PAGO',
-                        estadoPago: 'PENDIENTE_PAGO'
-                    });
-                });
-            }
+            // Invoices status remains PENDIENTE_FACTURA (or similar) until Verification?
+            // User: "El admin debe poder marcar Verify -> recién con VERIFIED se habilita READY_TO_PAY"
+            // So we do NOT update invoices here.
 
             await batch.commit();
 

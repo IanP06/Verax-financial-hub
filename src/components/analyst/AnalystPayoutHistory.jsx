@@ -110,8 +110,9 @@ const AnalystPayoutHistory = () => {
 
                         {expandedId === req.id && (
                             <div className="bg-gray-50 dark:bg-slate-900/50 p-4 border-t border-gray-200 dark:border-slate-700">
-                                { /* Upload Action for NEEDS_INVOICE */}
-                                {(req.status === 'NEEDS_INVOICE' || req.status === 'PENDIENTE_FACTURA') && (
+                                { /* Upload Action for NEEDS_INVOICE or REQUIRED status */}
+                                {/* Show upload if: Status is NEEDS/READY but invoiceStatus is REQUIRED or (Legacy logic) */}
+                                {(req.invoiceStatus === 'REQUIRED' || (req.status === 'NEEDS_INVOICE' && req.invoiceStatus !== 'UPLOADED' && req.invoiceStatus !== 'VERIFIED')) && (
                                     <div className="mb-4 bg-orange-50 dark:bg-orange-900/20 p-4 rounded border border-orange-200 dark:border-orange-800 flex flex-col sm:flex-row items-center justify-between gap-4">
                                         <div>
                                             <p className="font-bold text-orange-800 dark:text-orange-300">¡Acción requerida!</p>
@@ -133,6 +134,31 @@ const AnalystPayoutHistory = () => {
                                                     />
                                                 </label>
                                             )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Status Badges for Invoice */}
+                                {req.invoiceStatus === 'UPLOADED' && (
+                                    <div className="mb-4 bg-blue-50 dark:bg-blue-900/20 p-3 rounded border border-blue-200 dark:border-blue-800 flex items-center gap-3">
+                                        <CheckCircle className="text-blue-600 dark:text-blue-400" size={20} />
+                                        <div>
+                                            <p className="text-sm font-bold text-blue-800 dark:text-blue-300">Comprobante Subido</p>
+                                            <p className="text-xs text-blue-600 dark:text-blue-200">
+                                                {req.invoiceReceipt?.fileName} — Pendiente de revisión admin.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {req.invoiceStatus === 'VERIFIED' && (
+                                    <div className="mb-4 bg-green-50 dark:bg-green-900/20 p-3 rounded border border-green-200 dark:border-green-800 flex items-center gap-3">
+                                        <CheckCircle className="text-green-600 dark:text-green-400" size={20} />
+                                        <div>
+                                            <p className="text-sm font-bold text-green-800 dark:text-green-300">Comprobante Verificado</p>
+                                            <p className="text-xs text-green-600 dark:text-green-200">
+                                                Su factura ha sido aprobada. El pago se procesará pronto.
+                                            </p>
                                         </div>
                                     </div>
                                 )}

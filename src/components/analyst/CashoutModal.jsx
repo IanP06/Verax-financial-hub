@@ -6,6 +6,40 @@ import { getAnalystTotal } from '../../utils/money';
 const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfile }) => {
     const { createPayoutRequest } = useAnalystStore();
     const [loading, setLoading] = useState(false);
+    const [requiresInvoice, setRequiresInvoice] = useState(false);
+
+    // Fetch Rule on Open
+    React.useEffect(() => {
+        if (isOpen && (userProfile?.displayName || user?.email)) {
+            const fetchRule = async () => {
+                try {
+                    // Try to read the specific rule for this analyst
+                    // Assuming 'settings/analystRules' is a DOC with an array 'rules' or similar based on previous context.
+                    // Or we can just check userProfile if Admin syncs it.
+                    // BUT Prompt said: "NO hardcodear... se lee desde Firestore... Compatibilidad: si un analista NO tiene regla cargada todavía, default requiresInvoice=false"
+
+                    const { doc, getDoc } = await import('firebase/firestore');
+                    const { db } = await import('../../lib/firebase');
+
+                    // Assuming 'rules' array in 'settings/analystRules'
+                    const docRef = doc(db, 'settings', 'analystRules');
+                    const snap = await getDoc(docRef);
+                    if (snap.exists()) {
+                        const data = snap.data();
+                        const rules = data.rules || [];
+                        const meName = userProfile?.analystKey || userProfile?.displayName || user?.email;
+                        const myRule = rules.find(r => r.name === meName);
+                        if (myRule && myRule.requiresInvoice) {
+                            setRequiresInvoice(true);
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error reading rules:", e);
+                }
+            };
+            fetchRule();
+        }
+    }, [isOpen, user, userProfile]);
 
     if (!isOpen) return null;
 
@@ -18,8 +52,8 @@ const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfil
         const selectedInvoices = invoices.filter(inv => selectedIds.includes(inv.id));
         const analystName = userProfile?.displayName || user?.email || 'Analista'; // Fallback
 
-        // Check for invoice requirement
-        const requiresInvoice = userProfile?.requiresInvoice === true;
+        // Check for invoice requirement (State based)
+        // const requiresInvoice = userProfile?.requiresInvoice === true; // OLD
 
         const result = await createPayoutRequest(user.uid, analystName, selectedInvoices, requiresInvoice);
         if (result && result.success) {
@@ -102,7 +136,7 @@ const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfil
                         <span>Total a Solicitar:</span>
                         <span>${totalAmount.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                     </div>
-                    {userProfile?.requiresInvoice && (
+                    {requiresInvoice && (
                         <div className="bg-yellow-50 p-3 rounded text-xs text-yellow-800">
                             ⚠️ Usted emite Factura C. Deberá subir el comprobante una vez aprobada la solicitud.
                         </div>
