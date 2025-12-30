@@ -1,10 +1,12 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, UploadCloud, FileSpreadsheet, Settings, DollarSign, LogOut } from 'lucide-react';
+import { LayoutDashboard, UploadCloud, FileSpreadsheet, Settings, DollarSign, LogOut, FileText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const Sidebar = ({ theme, toggleTheme }) => {
-    const { logout } = useAuth();
+    const { logout, userProfile } = useAuth();
+    const isAdmin = userProfile?.role === 'ADMIN';
+
     const linkClasses = ({ isActive }) =>
         `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
             ? 'bg-[#355071] text-white shadow-md'
@@ -12,7 +14,7 @@ const Sidebar = ({ theme, toggleTheme }) => {
         }`;
 
     return (
-        <div className="w-64 bg-[#0f172a] min-h-screen flex flex-col text-white">
+        <div className="w-64 bg-[#0f172a] min-h-screen flex flex-col text-white flex-shrink-0 z-50">
             {/* Header */}
             <div className="p-6 border-b border-gray-700">
                 <h1 className="text-xl font-bold text-white tracking-wide">Verax Financial Hub</h1>
@@ -21,25 +23,43 @@ const Sidebar = ({ theme, toggleTheme }) => {
 
             {/* Navegación Principal */}
             <nav className="flex-1 p-4 space-y-2">
-                <NavLink to="/ingesta" className={linkClasses}>
-                    <UploadCloud size={20} />
-                    <span className="font-medium">Ingesta & OCR</span>
-                </NavLink>
+                {isAdmin ? (
+                    <>
+                        {/* ADMIN LINKS */}
+                        <NavLink to="/ingesta" className={linkClasses}>
+                            <UploadCloud size={20} />
+                            <span className="font-medium">Ingesta & OCR</span>
+                        </NavLink>
 
-                <NavLink to="/staging" className={linkClasses}>
-                    <FileSpreadsheet size={20} />
-                    <span className="font-medium">Staging Area</span>
-                </NavLink>
+                        <NavLink to="/staging" className={linkClasses}>
+                            <FileSpreadsheet size={20} />
+                            <span className="font-medium">Staging Area</span>
+                        </NavLink>
 
-                <NavLink to="/dashboard" className={linkClasses}>
-                    <LayoutDashboard size={20} />
-                    <span className="font-medium">Dashboard</span>
-                </NavLink>
+                        <NavLink to="/dashboard" className={linkClasses}>
+                            <LayoutDashboard size={20} />
+                            <span className="font-medium">Dashboard</span>
+                        </NavLink>
 
-                <NavLink to="/payouts" className={linkClasses}>
-                    <DollarSign size={20} />
-                    <span className="font-medium">Solicitudes Pago</span>
-                </NavLink>
+                        <NavLink to="/payouts" className={linkClasses}>
+                            <DollarSign size={20} />
+                            <span className="font-medium">Solicitudes Pago</span>
+                        </NavLink>
+                    </>
+                ) : (
+                    <>
+                        {/* ANALYST LINKS */}
+                        <NavLink to="/analyst" end className={linkClasses}>
+                            <LayoutDashboard size={20} />
+                            <span className="font-medium">Dashboard</span>
+                        </NavLink>
+
+                        <NavLink to="/analyst/payout-requests" className={linkClasses}>
+                            <FileText size={20} />
+                            <span className="font-medium">Mis Solicitudes</span>
+                        </NavLink>
+                    </>
+                )}
             </nav>
 
             {/* Footer / Configuración */}
@@ -58,10 +78,12 @@ const Sidebar = ({ theme, toggleTheme }) => {
                     </button>
                 </div>
 
-                <NavLink to="/settings" className={linkClasses}>
-                    <Settings size={20} />
-                    <span className="font-medium">Configuración</span>
-                </NavLink>
+                {isAdmin && (
+                    <NavLink to="/settings" className={linkClasses}>
+                        <Settings size={20} />
+                        <span className="font-medium">Configuración</span>
+                    </NavLink>
+                )}
 
                 <button
                     onClick={() => logout()}

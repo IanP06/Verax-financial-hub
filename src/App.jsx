@@ -9,6 +9,7 @@ import Login from './components/auth/Login';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import AnalystLayout from './components/analyst/AnalystLayout';
 import AnalystDashboard from './components/analyst/AnalystDashboard';
+import AnalystPayoutRequests from './components/analyst/AnalystPayoutRequests'; // [NEW IMPORT]
 import PayoutRequests from './components/admin/PayoutRequests';
 import { AuthProvider } from './context/AuthContext';
 import useInvoiceStore from './store/useInvoiceStore';
@@ -85,8 +86,9 @@ function App() {
 
           {/* ANALYST ROUTES */}
           <Route element={<ProtectedRoute allowedRoles={['ANALYST']} />}>
-            <Route path="/analyst" element={<AnalystLayout />}>
+            <Route path="/analyst" element={<AnalystLayout theme={theme} toggleTheme={toggleTheme} />}>
               <Route index element={<AnalystDashboard />} />
+              <Route path="payout-requests" element={<AnalystPayoutRequests />} />
               {/* Add more analyst routes here */}
             </Route>
           </Route>

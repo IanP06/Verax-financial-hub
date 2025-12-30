@@ -2,8 +2,9 @@ import React, { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import useAnalystStore from '../../store/useAnalystStore';
+import Sidebar from '../layout/Sidebar';
 
-const AnalystLayout = () => {
+const AnalystLayout = ({ theme, toggleTheme }) => {
     const { user, logout } = useAuth();
     const { fetchAnalystData } = useAnalystStore();
 
@@ -12,7 +13,7 @@ const AnalystLayout = () => {
             // Determine the key to use for querying
             // Priority: profile.analystKey > profile.displayName > auth.displayName
             const keyToUse = user.analystKey || user.displayName;
-            console.log(`[AnalystLayout] Fetching data for UID: ${user.uid} using Key: ${keyToUse}`);
+            // console.log(`[AnalystLayout] Fetching data for UID: ${user.uid} using Key: ${keyToUse}`);
 
             if (keyToUse) {
                 fetchAnalystData(user.uid, keyToUse);
@@ -23,29 +24,15 @@ const AnalystLayout = () => {
     }, [user, fetchAnalystData]);
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
-            {/* Header */}
-            <header className="bg-white dark:bg-slate-950 shadow">
-                <div className="mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
-                    <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">
-                        Verax Financial Hub - Analistas
-                    </h1>
-                    <div className="flex items-center gap-4">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                            {user?.displayName || user?.email}
-                        </span>
-                        <button
-                            onClick={logout}
-                            className="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500"
-                        >
-                            Cerrar Sesión
-                        </button>
-                    </div>
-                </div>
-            </header>
+        <div className="flex min-h-screen bg-gray-50 font-sans text-gray-900 dark:bg-slate-950 dark:text-slate-100">
+            {/* Shared Sidebar */}
+            <Sidebar theme={theme} toggleTheme={toggleTheme} />
 
-            <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-                <Outlet />
+            {/* Main Content */}
+            <main className="flex-1 p-8 overflow-y-auto">
+                <div className="mx-auto max-w-7xl">
+                    <Outlet />
+                </div>
             </main>
         </div>
     );
