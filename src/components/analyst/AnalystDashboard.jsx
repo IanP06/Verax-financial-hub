@@ -32,17 +32,20 @@ const StatCard = ({ title, value, subtext, icon: Icon, color }) => (
     </div>
 );
 
+import AnalystPayoutHistory from './AnalystPayoutHistory'; // Import New Component
+
 const AnalystDashboard = () => {
     const { user, userProfile } = useAuth();
-    const { fetchAnalystData, analystInvoices, payoutRequests, getStats } = useAnalystStore();
+    const { fetchAnalystData, analystInvoices, getStats } = useAnalystStore(); // Removed unused payoutRequests
     const [selectedIds, setSelectedIds] = useState([]);
     const [isCashoutModalOpen, setCashoutModalOpen] = useState(false);
 
     useEffect(() => {
-        if (user?.uid) {
-            fetchAnalystData(user.uid);
+        if (user?.uid && userProfile?.analystKey) {
+            // Pass BOTH uid and analystKey
+            fetchAnalystData(user.uid, userProfile.analystKey);
         }
-    }, [user, fetchAnalystData]);
+    }, [user, userProfile, fetchAnalystData]);
 
     const stats = getStats();
 
@@ -66,7 +69,7 @@ const AnalystDashboard = () => {
                 />
                 <StatCard
                     title="Monto Histórico"
-                    value={`$${stats.totalAmount.toLocaleString()}`}
+                    value={`$${stats.totalAmount.toLocaleString('es-AR')}`}
                     icon={BarChart}
                     color="green"
                 />
@@ -79,7 +82,7 @@ const AnalystDashboard = () => {
                 />
                 <StatCard
                     title="Monto Disponible"
-                    value={`$${stats.readyAmount.toLocaleString()}`}
+                    value={`$${stats.readyAmount.toLocaleString('es-AR')}`}
                     icon={Wallet}
                     color="green"
                 />
@@ -108,47 +111,8 @@ const AnalystDashboard = () => {
                 onSelectionChange={setSelectedIds}
             />
 
-            {/* Recent Requests List (Mini View) */}
-            <div className="mt-8">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Solicitudes Recientes</h3>
-                <div className="bg-white dark:bg-slate-800 shadow rounded-lg overflow-hidden">
-                    <ul className="divide-y divide-gray-200 dark:divide-slate-700">
-                        {/* Error State for Missing Index */}
-                        {useAnalystStore.getState().requestsError === 'missing-index' && (
-                            <li className="p-4 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 text-sm">
-                                ⚠️ No se pudieron cargar las solicitudes recientes (falta índice en base de datos).
-                                Sus facturas están visibles arriba. Contacte al administrador.
-                            </li>
-                        )}
-
-                        {payoutRequests.length === 0 && !useAnalystStore.getState().requestsError ? (
-                            <li className="p-4 text-sm text-gray-500">No hay solicitudes recientes.</li>
-                        ) : (
-                            payoutRequests.map(req => (
-                                <li key={req.id} className="p-4 hover:bg-gray-50 dark:hover:bg-slate-700">
-                                    <div className="flex justify-between">
-                                        <div>
-                                            <p className="text-sm font-medium text-blue-600">ID: {req.id}</p>
-                                            <p className="text-sm text-gray-500">
-                                                {new Date(req.createdAt?.seconds * 1000).toLocaleDateString()}
-                                            </p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-sm font-bold text-gray-900 dark:text-white">
-                                                ${req.totalAmount?.toLocaleString()}
-                                            </p>
-                                            <span className={`inline-flex px-2 text-xs font-semibold rounded-full 
-                                                ${req.status === 'PAID' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                                                {req.status}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </li>
-                            ))
-                        )}
-                    </ul>
-                </div>
-            </div>
+            {/* Full History Section */}
+            <AnalystPayoutHistory />
 
             {/* Modal */}
             {isCashoutModalOpen && (

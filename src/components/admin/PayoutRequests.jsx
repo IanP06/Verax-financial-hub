@@ -267,9 +267,10 @@ const PayoutRequests = () => {
                                         )}
                                     </div>
                                 </div>
-                                <div className="mt-2 text-xs text-purple-600 font-medium">
-                                    Programado: {new Date(req.scheduledPaymentDate).toLocaleDateString()}
-                                </div>
+                                {req.scheduledPaymentDate && (
+                                    <div className="mt-2 text-xs text-purple-600 font-medium">
+                                        Programado: {new Date(req.scheduledPaymentDate).toLocaleDateString()}
+                                    </div>
                                 )}
 
                                 <div className="mt-4">

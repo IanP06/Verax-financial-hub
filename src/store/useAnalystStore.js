@@ -86,19 +86,36 @@ const useAnalystStore = create((set, get) => ({
     // INTERNAL: Fetch Requests (Can fail due to index)
     fetchPayoutRequestsForAnalyst: async (uid) => {
         console.log(`[Store] Fetching PayoutRequests for UID: ${uid}`);
+        set({ requestsError: null });
+        const requestsRef = collection(db, 'payoutRequests');
+
         try {
-            set({ requestsError: null });
-            const requestsRef = collection(db, 'payoutRequests');
+            // Try Ordered Query (Needs Index)
             const qReq = query(requestsRef, where('analystUid', '==', uid), orderBy('createdAt', 'desc'));
             const reqSnap = await getDocs(qReq);
             const requests = reqSnap.docs.map(d => ({ ...d.data(), id: d.id }));
             set({ payoutRequests: requests });
         } catch (err) {
-            console.warn("[Store] PayoutRequests fetch failed (likely index issue):", err);
-            // If failed-precondition, it means missing index.
+            // Fallback for missing index
             if (err.code === 'failed-precondition' || err.message.includes('index')) {
-                set({ requestsError: 'missing-index', payoutRequests: [] });
+                console.warn("[Store] PayoutRequests index missing. Falling back to client-side sort.");
+                try {
+                    const qSimple = query(requestsRef, where('analystUid', '==', uid));
+                    const simpleSnap = await getDocs(qSimple);
+                    const requests = simpleSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+                    // Client Sort desc
+                    requests.sort((a, b) => {
+                        const tA = a.createdAt?.seconds || 0;
+                        const tB = b.createdAt?.seconds || 0;
+                        return tB - tA;
+                    });
+                    set({ payoutRequests: requests });
+                } catch (fallbackErr) {
+                    console.error("Fallback fetch failed:", fallbackErr);
+                    set({ requestsError: 'generic', payoutRequests: [] });
+                }
             } else {
+                console.error("Error fetching requests:", err);
                 set({ requestsError: 'generic', payoutRequests: [] });
             }
         }
@@ -130,56 +147,74 @@ const useAnalystStore = create((set, get) => ({
 
         set({ loading: true });
         try {
-            // Debug Logs
-            console.group("createPayoutRequest Debug");
-            const totalAmount = selectedInvoices.reduce((sum, inv) => {
-                const itemTotal = getAnalystTotal(inv);
-                console.log(`Invoice ${inv.id} (${inv.nroFactura || inv.factura}): Raw=${JSON.stringify({
-                    totalAPagarAnalista: inv.totalAPagarAnalista,
-                    totalALiquidar: inv.totalALiquidar,
-                    montoGestion: inv.montoGestion
-                })} -> Parsed=${itemTotal}`);
-                return sum + itemTotal;
-            }, 0);
-            console.log("Grand Total Calculated:", totalAmount);
-            console.groupEnd();
-
-            const invoiceIds = selectedInvoices.map(i => i.id);
-
-            // 1. Create Request Doc
-            const requestData = {
-                analystUid: uid,
-                analystName: analystName,
-                createdAt: serverTimestamp(), // Use server timestamp
-                status: 'SUBMITTED', // Initial status
-                invoiceIds: invoiceIds,
-                totalAmount: totalAmount,
-                invoiceCRequired: requiresInvoice,
-                // Invoice C fields empty initially
-                invoiceCUrl: null,
-                invoiceCStoragePath: null
-            };
-
-            const reqRef = await addDoc(collection(db, 'payoutRequests'), requestData);
-            const requestId = reqRef.id;
-
-            // 2. Update Analyst Invoices (Mirror) with linkedPayoutRequestId and status 'EN_SOLICITUD'
-            // We do this in parallel or batch
+            // Import batch
             const { writeBatch } = await import('firebase/firestore');
             const batch = writeBatch(db);
 
+            // Calculate Total
+            const totalAmount = selectedInvoices.reduce((sum, inv) => sum + getAnalystTotal(inv), 0);
+            const invoiceIds = selectedInvoices.map(i => i.id);
+
+            // Snapshot vital fields for history
+            const invoiceSnapshot = selectedInvoices.map(inv => ({
+                id: inv.id,
+                nroFactura: inv.nroFactura || inv.factura || inv.invoiceNumber || '-',
+                siniestro: inv.siniestro || inv.claimNumber || '-',
+                aseguradora: inv.aseguradora || inv.insurer || '-',
+                fechaEmision: inv.fechaEmision || inv.fecha || inv.issueDate || '-',
+                total: getAnalystTotal(inv)
+            }));
+
+            // 1. Create Request Doc Reference
+            const requestRef = doc(collection(db, 'payoutRequests'));
+            const requestId = requestRef.id;
+
+            const requestData = {
+                analystUid: uid,
+                analystName: analystName,
+                createdAt: serverTimestamp(),
+                status: 'SUBMITTED', // Initial status
+                invoiceIds: invoiceIds,
+                invoiceSnapshot: invoiceSnapshot,
+                totalAmount: totalAmount,
+                invoiceCRequired: requiresInvoice,
+                invoiceCUrl: null,
+                invoiceCStoragePath: null,
+                history: [
+                    {
+                        at: new Date().toISOString(),
+                        action: 'SUBMITTED',
+                        note: 'Solicitud creada por analista'
+                    }
+                ]
+            };
+
+            // Add Request to Batch
+            batch.set(requestRef, requestData);
+
+            // 2. Update Invoices to PENDIENTE
             invoiceIds.forEach(invId => {
-                const invRef = doc(db, `analyst_invoices/${uid}/items`, invId);
+                // Update MAIN invoices collection to ensure single source of truth is blocked
+                const invRef = doc(db, 'invoices', invId);
                 batch.update(invRef, {
-                    paymentStatus: 'EN_SOLICITUD',
+                    estadoPago: 'PENDIENTE',
+                    paymentStatus: 'PENDIENTE',
+                    linkedPayoutRequestId: requestId,
+                    payoutRequestedAt: serverTimestamp()
+                });
+
+                // Update MIRROR
+                const mirrorRef = doc(db, `analyst_invoices/${uid}/items`, invId);
+                batch.update(mirrorRef, {
+                    paymentStatus: 'PENDIENTE', // Changed from EN_SOLICITUD to PENDIENTE for consistency
+                    estadoPago: 'PENDIENTE',
                     linkedPayoutRequestId: requestId
                 });
             });
 
             await batch.commit();
 
-            // Refresh local state (optimistic or refetch)
-            // Ideally refetch to ensure consistency
+            // Refresh local state
             await get().fetchAnalystData(uid);
 
             return { success: true };
