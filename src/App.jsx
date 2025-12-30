@@ -20,25 +20,34 @@ import { db } from "./lib/firebase";
 // ==========================
 
 // Layout Wrapper for Admin to include Sidebar
-const AdminLayout = ({ children, theme, toggleTheme }) => (
-  <div className="flex min-h-screen bg-gray-100 font-sans text-gray-900 dark:bg-slate-950 dark:text-slate-100">
-    <Sidebar theme={theme} toggleTheme={toggleTheme} />
-    <main className="flex-1 p-8 overflow-y-auto">
-      {children}
-    </main>
-  </div>
-);
+const AdminLayout = ({ children, theme, toggleTheme }) => {
+  const { initAdminData } = useInvoiceStore();
+  useEffect(() => {
+    initAdminData();
+  }, [initAdminData]);
+
+  return (
+    <div className="flex min-h-screen bg-gray-100 font-sans text-gray-900 dark:bg-slate-950 dark:text-slate-100">
+      <Sidebar theme={theme} toggleTheme={toggleTheme} />
+      <main className="flex-1 p-8 overflow-y-auto">
+        {children}
+      </main>
+    </div>
+  );
+};
+
 
 function App() {
-  const { initFromFirestore } = useInvoiceStore();
   const [theme, setTheme] = useState("light");
 
+  // REMOVED unconditional initFromFirestore to prevent Analyst crashes
+  // Logic moved to AdminLayout or Authorized components
+
   useEffect(() => {
-    initFromFirestore();
     const t = getInitialTheme();
     setTheme(t);
     applyTheme(t);
-  }, [initFromFirestore]);
+  }, []);
 
   const toggleTheme = () => {
     setTheme((prev) => {

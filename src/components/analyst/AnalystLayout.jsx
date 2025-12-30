@@ -1,14 +1,18 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-
-// Simple Layout for Analyst
-// For now, simpler than Admin Sidebar, or maybe reuse Sidebar but with restricted items?
-// The prompt says "Crear un nuevo layout y rutas /analyst".
-// Let's create a specific top bar or sidebar for Analyst.
+import useAnalystStore from '../../store/useAnalystStore';
 
 const AnalystLayout = () => {
     const { user, logout } = useAuth();
+    const { fetchAnalystData } = useAnalystStore();
+
+    useEffect(() => {
+        if (user?.uid) {
+            console.log(`[AnalystLayout] Fetching data for ${user.displayName} (${user.uid})`);
+            fetchAnalystData(user.uid);
+        }
+    }, [user, fetchAnalystData]);
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-slate-900">

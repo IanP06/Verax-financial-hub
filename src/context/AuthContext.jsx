@@ -31,19 +31,28 @@ export const AuthProvider = ({ children }) => {
 
                     if (profileSnap.exists()) {
                         const profileData = profileSnap.data();
-                        setUserProfile(profileData);
-                        // Merge profile into user object for easy access
-                        setUser({ ...currentUser, ...profileData });
+
+                        // === ROLE NORMALIZATION ===
+                        // Prompt requirement: "Normalizar y robustecer el manejo de roles"
+                        const rawRole = profileData.role || "";
+                        const normalizedRole = rawRole.toString().trim().toLowerCase(); // "admin" or "analyst"
+
+                        console.log(`[Auth] User: ${currentUser.email} | Raw Role: ${rawRole} | Normalized: ${normalizedRole}`);
+
+                        // Update profile with normalized role for internal use
+                        const safeProfile = { ...profileData, role: normalizedRole };
+                        setUserProfile(safeProfile);
+                        setUser({ ...currentUser, ...safeProfile });
                     } else {
-                        // Fallback: If no profile exists, assume basic user or error
-                        // For this app, maybe default to limited access or just set basic user
-                        console.warn(`No userProfile found for ${currentUser.uid}`);
-                        setUser(currentUser);
+                        console.warn(`[Auth] No userProfile found for ${currentUser.uid}`);
+                        // Don't auto-logout. Just set user without profile data (Guest/Invalid)
+                        setUser({ ...currentUser, role: 'unknown' });
                         setUserProfile(null);
                     }
                 } catch (error) {
-                    console.error("Error fetching user profile:", error);
-                    setUser(currentUser); // Still set auth user even if profile fails
+                    console.error("[Auth] Error fetching user profile:", error);
+                    // Critical: Do NOT signOut.
+                    setUser({ ...currentUser, role: 'error' });
                 }
             } else {
                 setUser(null);

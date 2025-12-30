@@ -94,33 +94,68 @@ const useInvoiceStore = create(
                 ]
             },
 
-            // INIT: Carga inicial desde Firestore
-            initFromFirestore: async () => {
-                if (get().isHydrated) return;
+            // INIT ADMIN: Carga masiva (Solo para ADMIN)
+            initAdminData: async () => {
+                if (get().isHydrated) return; // Prevent double load
+                console.log("[Store] Starting Admin Init...");
+
                 try {
                     // 1. Configurar Settings
+                    const settingsRef = doc(db, 'settings', 'global');
+                    // Wrap in try-catch specifically for permission errors
+                    try {
+                        const settingsSnap = await getDoc(settingsRef);
+                        if (settingsSnap.exists()) {
+                            set({ config: { ...get().config, ...settingsSnap.data() } });
+                        } else {
+                            // Only admin can create. If 403, we catch below.
+                            await setDoc(settingsRef, get().config);
+                        }
+                    } catch (err) {
+                        console.warn("[Store] Settings load failed (likely permission):", err);
+                        // Continue, don't crash
+                    }
+
+                    // 2. Cargar UserProfiles
+                    try {
+                        const profilesSnap = await getDocs(collection(db, 'userProfiles'));
+                        const profiles = profilesSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
+                        set({ analystProfiles: profiles });
+                    } catch (err) {
+                        console.warn("[Store] Profiles load failed:", err);
+                    }
+
+                    // 3. Facturas (Main Collection)
+                    // This will fail for Analysts if rules deny read
+                    const invoicesSnap = await getDocs(collection(db, 'invoices'));
+                    const invoicesData = invoicesSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+                    set({ invoices: invoicesData, isHydrated: true });
+                    console.log("[Store] Admin Init Complete.");
+
+                } catch (error) {
+                    console.error("[Store] Error inicializando Data Admin:", error);
+                    // Don't alert() to avoid annoying users if it's just a permission issue handled by UI
+                }
+            },
+
+            // INIT ANALYST: Carga específica (Solo lo necesario)
+            initAnalystData: async (analystKey) => {
+                // Analysts don't need the main large 'invoices' list in this store usually, 
+                // as they usage useAnalystStore for their dashboard.
+                // However, if some shared component needs it, we can fetch filtered (if allowed)
+                // or just skip.
+                console.log(`[Store] Init Analyst Data for ${analystKey}`);
+
+                // Try to load minimal settings if possible
+                try {
                     const settingsRef = doc(db, 'settings', 'global');
                     const settingsSnap = await getDoc(settingsRef);
                     if (settingsSnap.exists()) {
                         set({ config: { ...get().config, ...settingsSnap.data() } });
-                    } else {
-                        await setDoc(settingsRef, get().config);
                     }
+                } catch (e) { console.warn("Analyst cannot read global settings"); }
 
-                    // 2. Cargar UserProfiles (Analyst Map)
-                    const profilesSnap = await getDocs(collection(db, 'userProfiles'));
-                    const profiles = profilesSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
-                    set({ analystProfiles: profiles });
-
-                    // 3. Facturas
-                    const invoicesSnap = await getDocs(collection(db, 'invoices'));
-                    const invoicesData = invoicesSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-                    set({ invoices: invoicesData, isHydrated: true });
-
-                } catch (error) {
-                    console.error("Error inicializando Firestore:", error);
-                    alert("Error de conexión con la base de datos.");
-                }
+                set({ isHydrated: true });
             },
 
             updateConfig: async (newConfig) => {
