@@ -177,9 +177,9 @@ const useAnalystStore = create((set, get) => ({
                 invoiceIds: invoiceIds,
                 invoiceSnapshot: invoiceSnapshot,
                 totalAmount: totalAmount,
-                invoiceCRequired: requiresInvoice,
-                invoiceCUrl: null,
-                invoiceCStoragePath: null,
+                expiresAt: null, // Placeholder if needed
+                requiresInvoice: !!requiresInvoice, // Ensure bool
+                invoiceReceipt: null,
                 history: [
                     {
                         at: new Date().toISOString(),
@@ -206,7 +206,7 @@ const useAnalystStore = create((set, get) => ({
                 // Update MIRROR
                 const mirrorRef = doc(db, `analyst_invoices/${uid}/items`, invId);
                 batch.update(mirrorRef, {
-                    paymentStatus: 'PENDIENTE', // Changed from EN_SOLICITUD to PENDIENTE for consistency
+                    paymentStatus: 'PENDIENTE',
                     estadoPago: 'PENDIENTE',
                     linkedPayoutRequestId: requestId
                 });
@@ -221,6 +221,81 @@ const useAnalystStore = create((set, get) => ({
         } catch (err) {
             console.error("Error creating payout request:", err);
             set({ loading: false, error: "Error creando solicitud" });
+            return { success: false, error: err.message };
+        }
+    },
+
+    uploadInvoiceReceipt: async (requestId, file, analystUid) => {
+        set({ loading: true });
+        try {
+            // 1. Upload File (Client-side usage of Firebase Storage would be ideal here calling a service, 
+            // but we can assume a helper or do it here if we import storage).
+            // For now, let's assume the component uploads and passes the URL, OR we implement simple upload locally.
+            // The prompt says "Usar Firebase Storage (si ya está)".
+            // Let's implement full upload here if we can import getStorage.
+
+            const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+            const { updateDoc, arrayUnion } = await import('firebase/firestore');
+
+            const storage = getStorage();
+            const storageRef = ref(storage, `payout_receipts/${requestId}/${file.name}`);
+
+            await uploadBytes(storageRef, file);
+            const url = await getDownloadURL(storageRef);
+
+            // 2. Update Request
+            const reqRef = doc(db, 'payoutRequests', requestId);
+
+            // Fetch request to get invoiceIds (for updating invoices)
+            const reqSnap = await getDoc(reqRef);
+            if (!reqSnap.exists()) throw new Error("Solicitud no encontrada");
+            const reqData = reqSnap.data();
+
+            const { writeBatch } = await import('firebase/firestore');
+            const batch = writeBatch(db);
+
+            // Request Update
+            batch.update(reqRef, {
+                status: 'PENDIENTE_PAGO', // Transitions to Payment Pending
+                invoiceReceipt: {
+                    url: url,
+                    fileName: file.name,
+                    uploadedAt: new Date().toISOString(),
+                    uploadedByUid: analystUid
+                },
+                history: arrayUnion({
+                    at: new Date().toISOString(),
+                    action: 'RECEIPT_UPLOADED',
+                    note: `Factura subida: ${file.name}`
+                })
+            });
+
+            // 3. Update Invoices (Main + Mirror) -> PENDIENTE_PAGO
+            if (reqData.invoiceIds && reqData.invoiceIds.length > 0) {
+                reqData.invoiceIds.forEach(invId => {
+                    // Main
+                    batch.update(doc(db, 'invoices', invId), {
+                        estadoPago: 'PENDIENTE_PAGO',
+                        paymentStatus: 'PENDIENTE_PAGO'
+                    });
+                    // Mirror
+                    batch.update(doc(db, `analyst_invoices/${analystUid}/items`, invId), {
+                        paymentStatus: 'PENDIENTE_PAGO',
+                        estadoPago: 'PENDIENTE_PAGO'
+                    });
+                });
+            }
+
+            await batch.commit();
+
+            // Refresh
+            await get().fetchAnalystData(analystUid);
+            set({ loading: false });
+            return { success: true, url };
+
+        } catch (err) {
+            console.error("Error uploading receipt:", err);
+            set({ loading: false, error: "Error subiendo comprobante" });
             return { success: false, error: err.message };
         }
     }

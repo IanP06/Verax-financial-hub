@@ -1,10 +1,48 @@
 import React, { useState } from 'react';
 import { Clock, CheckCircle, XCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import useAnalystStore from '../../store/useAnalystStore';
+import useAuth from '../../hooks/useAuth'; // Assuming this path for useAuth
 
 const AnalystPayoutHistory = () => {
-    const { payoutRequests, requestsError } = useAnalystStore();
+    const { payoutRequests, requestsError, uploadInvoiceReceipt, loading } = useAnalystStore(); // Added uploadInvoiceReceipt
+    const { user } = useAuth(); // Need to pass analystUid
     const [expandedId, setExpandedId] = useState(null);
+    const [uploadingId, setUploadingId] = useState(null);
+
+    const handleUpload = async (reqId, e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.type !== 'application/pdf') {
+            alert("Solo se admiten archivos PDF");
+            return;
+        }
+
+        if (!confirm(`¿Subir ${file.name} como comprobante?`)) return;
+
+        setUploadingId(reqId);
+        await uploadInvoiceReceipt(reqId, file, user.uid);
+        setUploadingId(null);
+    };
+
+    const toggleExpand = (id) => {
+        setExpandedId(expandedId === id ? null : id);
+    };
+
+    const getStatusConfig = (status) => {
+        switch (status) {
+            case 'SUBMITTED': return { color: 'bg-blue-100 text-blue-800', label: 'Enviada', icon: Clock };
+            case 'PENDIENTE_FACTURA': return { color: 'bg-orange-100 text-orange-800', label: 'Subir Factura C', icon: AlertCircle };
+            case 'PENDIENTE_PAGO': // Unified with Approved
+            case 'APPROVED_SCHEDULED':
+            case 'APPROVED_NEEDS_INVOICE':
+                return { color: 'bg-yellow-100 text-yellow-800', label: 'Pendiente Pago', icon: CheckCircle };
+            case 'PAID':
+            case 'PAGO':
+                return { color: 'bg-green-100 text-green-800', label: 'Pagada', icon: CheckCircle };
+            case 'REJECTED': return { color: 'bg-red-100 text-red-800', label: 'Rechazada', icon: XCircle };
+            default: return { color: 'bg-gray-100 text-gray-800', label: status, icon: AlertCircle };
+        }
+    };
 
     if (requestsError === 'generic') {
         return <div className="text-red-500 text-sm mt-4">Error cargando historial de solicitudes.</div>;
@@ -17,23 +55,6 @@ const AnalystPayoutHistory = () => {
             </div>
         );
     }
-
-    const toggleExpand = (id) => {
-        setExpandedId(expandedId === id ? null : id);
-    };
-
-    const getStatusConfig = (status) => {
-        switch (status) {
-            case 'SUBMITTED': return { color: 'bg-blue-100 text-blue-800', label: 'Enviada', icon: Clock };
-            case 'APPROVED_SCHEDULED':
-            case 'APPROVED_NEEDS_INVOICE':
-            case 'PENDING_PAYMENT':
-                return { color: 'bg-yellow-100 text-yellow-800', label: 'Aprobada / Pendiente Pago', icon: CheckCircle };
-            case 'PAID': return { color: 'bg-green-100 text-green-800', label: 'Pagada', icon: CheckCircle };
-            case 'REJECTED': return { color: 'bg-red-100 text-red-800', label: 'Rechazada', icon: XCircle };
-            default: return { color: 'bg-gray-100 text-gray-800', label: status, icon: AlertCircle };
-        }
-    };
 
     return (
         <div className="space-y-4 mt-6">
@@ -76,6 +97,32 @@ const AnalystPayoutHistory = () => {
 
                         {expandedId === req.id && (
                             <div className="bg-gray-50 dark:bg-slate-900/50 p-4 border-t border-gray-200 dark:border-slate-700">
+                                {/* Upload Action for PENDIENTE_FACTURA */}
+                                {req.status === 'PENDIENTE_FACTURA' && (
+                                    <div className="mb-4 bg-orange-50 dark:bg-orange-900/20 p-4 rounded border border-orange-200 dark:border-orange-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                        <div>
+                                            <p className="font-bold text-orange-800 dark:text-orange-300">¡Acción requerida!</p>
+                                            <p className="text-sm text-orange-700 dark:text-orange-200">
+                                                Para liberar el pago, debes adjuntar tu Factura C por el monto total.
+                                            </p>
+                                        </div>
+                                        <div>
+                                            {uploadingId === req.id ? (
+                                                <span className="text-sm text-gray-500">Subiendo...</span>
+                                            ) : (
+                                                <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium inline-block">
+                                                    Subir PDF
+                                                    <input
+                                                        type="file"
+                                                        accept="application/pdf"
+                                                        className="hidden"
+                                                        onChange={(e) => handleUpload(req.id, e)}
+                                                    />
+                                                </label>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                                 {/* Error Logic Visualization */}
                                 {req.status === 'REJECTED' && req.rejectionReason && (
                                     <div className="mb-4 bg-red-50 dark:bg-red-900/20 p-3 rounded border border-red-200 dark:border-red-800">

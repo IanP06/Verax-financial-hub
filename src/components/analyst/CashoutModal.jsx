@@ -15,19 +15,20 @@ const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfil
 
     const handleConfirm = async () => {
         setLoading(true);
-        const requiresInvoice = userProfile?.requiresInvoice || false; // default false
+        const selectedInvoices = invoices.filter(inv => selectedIds.includes(inv.id));
+        const analystName = userProfile?.displayName || user?.email || 'Analista'; // Fallback
 
-        await createPayoutRequest(
-            user.uid,
-            user.displayName || user.email, // fallback name
-            selectedInvoices,
-            requiresInvoice
-        );
+        // Check for invoice requirement
+        const requiresInvoice = userProfile?.requiresInvoice === true;
 
+        const result = await createPayoutRequest(user.uid, analystName, selectedInvoices, requiresInvoice);
+        if (result && result.success) {
+            alert("Solicitud creada exitosamente.");
+            onClose();
+        } else {
+            alert("Error: " + (result?.error || 'Desconocido'));
+        }
         setLoading(false);
-        onClose();
-        // Ideally we should empty selection in dashboard, but we can handle that via store reload or passing a setter
-        window.location.reload(); // Quick fix to reset selection state and refresh data
     };
 
     const handleExportCSV = () => {
