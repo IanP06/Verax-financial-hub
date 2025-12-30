@@ -37,6 +37,25 @@ const AnalystTable = ({ invoices, onSelectionChange }) => {
         return (inv.diasDesdeEmision || 0) >= 40 && !inv.linkedPayoutRequestId;
     };
 
+    const getStatusBadge = (status) => {
+        // Green: Final Paid state
+        if (status === 'PAGO' || status === 'PAGADO' || status === 'COBRADO') {
+            return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                {status}
+            </span>;
+        }
+        // Yellow: In Progress (Any stage of Payout Request)
+        if (status === 'PENDIENTE' || status === 'EN_SOLICITUD' || status === 'PENDIENTE_FACTURA' || status === 'PENDIENTE_PAGO' || status === 'APPROVED_SCHEDULED' || status === 'APPROVED_NEEDS_INVOICE') {
+            return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                {status}
+            </span>;
+        }
+        // Red: Default / Impago / Error
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            {status || 'IMPAGO'}
+        </span>;
+    };
+
     return (
         <div className="bg-white dark:bg-slate-800 shadow rounded-lg overflow-hidden">
             <div className="p-4 border-b border-gray-200 dark:border-slate-700 flex justify-between items-center">
