@@ -1,8 +1,10 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, UploadCloud, FileSpreadsheet, Settings, DollarSign } from 'lucide-react';
+import { LayoutDashboard, UploadCloud, FileSpreadsheet, Settings, DollarSign, LogOut } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 const Sidebar = ({ theme, toggleTheme }) => {
+    const { logout } = useAuth();
     const linkClasses = ({ isActive }) =>
         `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
             ? 'bg-[#355071] text-white shadow-md'
@@ -60,6 +62,14 @@ const Sidebar = ({ theme, toggleTheme }) => {
                     <Settings size={20} />
                     <span className="font-medium">Configuración</span>
                 </NavLink>
+
+                <button
+                    onClick={() => logout()}
+                    className="w-full flex items-center gap-3 px-4 py-2 mt-2 rounded-lg text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors"
+                >
+                    <LogOut size={20} />
+                    <span className="font-medium">Cerrar Sesión</span>
+                </button>
             </div>
         </div>
     );
