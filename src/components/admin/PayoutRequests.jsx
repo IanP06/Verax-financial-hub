@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, query, orderBy, getDocs, doc, updateDoc, writeBatch, serverTimestamp, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, doc, updateDoc, writeBatch, serverTimestamp, getDoc, onSnapshot } from 'firebase/firestore'; // Added onSnapshot
 import { CheckCircle, XCircle, Clock, FileText, DollarSign, AlertCircle } from 'lucide-react';
 
 const PayoutRequests = () => {
@@ -8,21 +8,25 @@ const PayoutRequests = () => {
     const [loading, setLoading] = useState(true);
     const [selectedReq, setSelectedReq] = useState(null); // For detail view/modal
 
-    const fetchRequests = async () => {
-        setLoading(true);
-        try {
-            const q = query(collection(db, 'payoutRequests'), orderBy('createdAt', 'desc'));
-            const snap = await getDocs(q);
-            setRequests(snap.docs.map(d => ({ ...d.data(), id: d.id })));
-        } catch (error) {
-            console.error("Error fetching payout requests:", error);
-        }
-        setLoading(false);
-    };
-
+    // REAL-TIME LISTENER
     useEffect(() => {
-        fetchRequests();
+        setLoading(true);
+        const q = query(collection(db, 'payoutRequests'), orderBy('createdAt', 'desc'));
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const data = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+            setRequests(data);
+            setLoading(false);
+        }, (error) => {
+            console.error("Error listening to payout requests:", error);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
     }, []);
+
+    // Removed manual fetchRequests function
+
 
     const handleApprove = async (req) => {
         if (!confirm("¿Aprobar solicitud?")) return;
@@ -74,7 +78,7 @@ const PayoutRequests = () => {
             }
 
             await batch.commit();
-            fetchRequests();
+            // fetchRequests(); // Handled by listener
         } catch (e) {
             console.error("Error approving:", e);
         }
@@ -117,7 +121,7 @@ const PayoutRequests = () => {
             }
 
             await batch.commit();
-            fetchRequests();
+            // fetchRequests(); // Handled by listener
         } catch (e) {
             console.error("Error verifying invoice:", e);
         }
@@ -167,7 +171,7 @@ const PayoutRequests = () => {
             }
 
             await batch.commit();
-            fetchRequests();
+            // fetchRequests(); // Handled by listener
 
         } catch (e) {
             console.error("Error rejecting:", e);

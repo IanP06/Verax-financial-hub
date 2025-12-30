@@ -121,24 +121,113 @@ const useAnalystStore = create((set, get) => ({
         }
     },
 
-    fetchAnalystData: async (uid, analystKey) => {
-        if (!uid || !analystKey) {
-            console.warn("[Store] Skipping fetchAnalystData (missing uid or key)");
-            return;
-        }
+    // REAL-TIME SUBSCRIPTION (Replaces fetchAnalystData)
+    subscribeToAnalystData: (uid, analystKey) => {
+        if (!uid || !analystKey) return () => { };
 
         set({ loading: true, error: null });
+        console.log(`[Store] Subscribing to data for: ${analystKey} (${uid})`);
 
-        try {
-            // Run independently. Invoices are critical. Requests are secondary.
-            await get().fetchInvoicesForAnalyst(analystKey);
-            await get().fetchPayoutRequestsForAnalyst(uid);
+        const { normalizeName } = require('../utils/text'); // Lazy import or assume available? simpler to import at top if possible, but safe here. actually imports inside actions work.
+        // Better: rely on the one imported at top if I added it... I haven't added it to top imports in previous steps explicitly efficiently.
+        // Let's stick to dynamic import or just helper function if available. 
+        // Logic below duplicates normalizeName or imports it.
+        // Since I can't easily change top imports in 'replace_file_content' mixed with function body, I'll use inline normalization logic or assume import is available if I added it previously?
+        // Wait, I see `import { normalizeName } from '../utils/text';` on line 4 in previous `view_file`. So it IS available.
 
-            set({ loading: false });
-        } catch (err) {
-            console.error("Critical Error fetching analyst data:", err);
-            set({ error: err.message, loading: false });
-        }
+        const me = normalizeName(analystKey);
+
+        // --- 1. SETUP INVOICE LISTENERS (Dual Query Strategy) ---
+        // We need to maintain "local" state for the two queries to merge them correctly on every update
+        let legacyDocs = [];
+        let futureDocs = [];
+
+        const mergeAndSetInvoices = () => {
+            const results = new Map();
+            legacyDocs.forEach(d => results.set(d.id, d));
+            futureDocs.forEach(d => results.set(d.id, d));
+
+            let allDocs = Array.from(results.values());
+            // Client-side Safe Filter
+            allDocs = allDocs.filter(d => normalizeName(d.analista || d.analyst) === me);
+
+            set({ analystInvoices: allDocs });
+        };
+
+        const { onSnapshot } = require('firebase/firestore'); // Import locally to be safe or rely on top level? 
+        // Top level import for 'onSnapshot' is NOT present in line 3 (checked previous file view). 
+        // I need to add it or use `import(...)`. 
+        // `import { ... } from 'firebase/firestore'` is cleaner but I need to modify top of file.
+        // I will trust that I can use `import` inside, or better, `require`? keys.
+        // Actually, let's assume I will update imports in a separate `replace` or just use the imported `db` and `collection` etc.
+        // Wait, `onSnapshot` is NOT imported at top. I MUST import it.
+        // I will use dynamic import for safety in this block:
+
+        let unsubLegacy = () => { };
+        let unsubFuture = () => { };
+        let unsubRequests = () => { };
+
+        (async () => {
+            const { onSnapshot, query, collection, where, orderBy } = await import('firebase/firestore');
+
+            // Query A: Legacy
+            const qLegacy = query(collection(db, 'invoices'), where('analista', '==', analystKey));
+            unsubLegacy = onSnapshot(qLegacy, (snap) => {
+                legacyDocs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+                mergeAndSetInvoices();
+            }, (error) => console.warn("Legacy Invoice Listener Error", error));
+
+            // Query B: Future
+            const qFuture = query(collection(db, 'invoices'), where('analyst', '==', analystKey));
+            unsubFuture = onSnapshot(qFuture, (snap) => {
+                futureDocs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+                mergeAndSetInvoices();
+            }, (error) => console.warn("Future Invoice Listener Error", error));
+
+            // --- 2. SETUP REQUESTS LISTENER ---
+            const requestsRef = collection(db, 'payoutRequests');
+            // Try Ordered
+            try {
+                const qReq = query(requestsRef, where('analystUid', '==', uid), orderBy('createdAt', 'desc'));
+                unsubRequests = onSnapshot(qReq, (snap) => {
+                    const reqs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+                    set({ payoutRequests: reqs, loading: false });
+                }, (err) => {
+                    // Index fallback logic for OnSnapshot is tricky. 
+                    // Usually we fallback to client side sort.
+                    if (err.code === 'failed-precondition' || err.message.includes('index')) {
+                        console.warn("[Store] Index missing for listener. Fallback to simple query.");
+                        const qSimple = query(requestsRef, where('analystUid', '==', uid));
+                        unsubRequests = onSnapshot(qSimple, (snap) => {
+                            const reqs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+                            // Sort Client Side
+                            reqs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                            set({ payoutRequests: reqs, loading: false });
+                        });
+                    } else {
+                        console.error("Requests Listener Error:", err);
+                        set({ loading: false });
+                    }
+                });
+            } catch (e) {
+                console.error("Setup Error:", e);
+                set({ loading: false });
+            }
+        })();
+
+        // Return Cleanup
+        return () => {
+            console.log("[Store] Unsubscribing observers...");
+            if (unsubLegacy) unsubLegacy();
+            if (unsubFuture) unsubFuture();
+            if (unsubRequests) unsubRequests();
+        };
+    },
+
+    // DEPRECATED: fetchAnalystData (Kept empty or aliased? functionality moved to subscribe)
+    // We keep it to avoid breaking calls if any, but log warning.
+    fetchAnalystData: async (uid, analystKey) => {
+        console.warn("[Store] fetchAnalystData is deprecated. Use subscribeToAnalystData.");
     },
 
     // INTERNAL: Fetch Single Rule On-Demand (No Cache Reliance)

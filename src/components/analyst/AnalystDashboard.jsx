@@ -39,10 +39,18 @@ const AnalystDashboard = () => {
     const [isCashoutModalOpen, setCashoutModalOpen] = useState(false);
 
     useEffect(() => {
-        if (user?.uid && userProfile?.analystKey) {
-            fetchAnalystData(user.uid, userProfile.analystKey);
+        let unsubscribe = () => { };
+
+        if (user?.uid && (userProfile?.analystKey || userProfile?.displayName)) {
+            const key = userProfile.analystKey || userProfile.displayName;
+            // Use Subscribe instead of Fetch
+            unsubscribe = useAnalystStore.getState().subscribeToAnalystData(user.uid, key);
         }
-    }, [user, userProfile, fetchAnalystData]);
+
+        return () => {
+            unsubscribe && unsubscribe();
+        };
+    }, [user, userProfile]);
 
     const stats = getStats();
 

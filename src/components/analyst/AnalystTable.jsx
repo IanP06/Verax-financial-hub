@@ -111,18 +111,18 @@ const AnalystTable = ({ invoices, onSelectionChange }) => {
                     <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
                         {filteredInvoices.map((inv) => {
                             const eligible = isEligibleForCashout(inv);
+                            const isSelectable = inv.estadoPago === 'IMPAGO' && !inv.linkedPayoutRequestId;
 
                             return (
-                                <tr key={inv.id} className={eligible ? "bg-green-50 dark:bg-green-900/10" : ""}>
+                                <tr key={inv.id} className={eligible ? "bg-green-50 dark:bg-green-900/10" : "hover:bg-gray-50 dark:hover:bg-slate-700/50"}>
                                     <td className="px-6 py-4 whitespace-nowrap">
-                                        {eligible && (
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedIds.includes(inv.id)}
-                                                onChange={() => handleCheckbox(inv.id)}
-                                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                            />
-                                        )}
+                                        <input
+                                            type="checkbox"
+                                            disabled={!isSelectable}
+                                            checked={selectedIds.includes(inv.id)}
+                                            onChange={(e) => isSelectable && handleCheckbox(inv.id)}
+                                            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        />
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                                         {inv.factura || '-'}
