@@ -35,7 +35,10 @@ const AnalystPayoutHistory = () => {
             case 'PENDIENTE_APROBACION': // Alias
                 return { color: 'bg-yellow-100 text-yellow-800', label: 'En Revisión (Admin)', icon: Clock };
 
-            case 'NEEDS_INVOICE': // Step 3b: Admin Approved, needs invoice
+            case 'APPROVED_WAITING_INVOICE': // Step 3b New
+                return { color: 'bg-orange-100 text-orange-800', label: 'Esperando Factura', icon: AlertCircle };
+
+            case 'NEEDS_INVOICE': // Legacy
                 return { color: 'bg-orange-100 text-orange-800', label: 'Requiere Factura', icon: AlertCircle };
             case 'PENDIENTE_FACTURA': // Legacy/Alias
                 return { color: 'bg-orange-100 text-orange-800', label: 'Subir Factura C', icon: AlertCircle };
@@ -111,8 +114,8 @@ const AnalystPayoutHistory = () => {
                         {expandedId === req.id && (
                             <div className="bg-gray-50 dark:bg-slate-900/50 p-4 border-t border-gray-200 dark:border-slate-700">
                                 { /* Upload Action for NEEDS_INVOICE or REQUIRED status */}
-                                {/* Show upload if: Status is NEEDS/READY but invoiceStatus is REQUIRED or (Legacy logic) */}
-                                {(req.invoiceStatus === 'REQUIRED' || (req.status === 'NEEDS_INVOICE' && req.invoiceStatus !== 'UPLOADED' && req.invoiceStatus !== 'VERIFIED')) && (
+                                {/* Show upload if: Status is APPROVED_WAITING_INVOICE (New) or NEEDS_INVOICE (Legacy) AND invoiceStatus is REQUIRED/NOT UPLOADED */}
+                                {(req.status === 'APPROVED_WAITING_INVOICE' || req.status === 'NEEDS_INVOICE' || req.status === 'PENDIENTE_FACTURA') && (req.invoiceStatus !== 'UPLOADED' && req.invoiceStatus !== 'VERIFIED') && (
                                     <div className="mb-4 bg-orange-50 dark:bg-orange-900/20 p-4 rounded border border-orange-200 dark:border-orange-800 flex flex-col sm:flex-row items-center justify-between gap-4">
                                         <div>
                                             <p className="font-bold text-orange-800 dark:text-orange-300">¡Acción requerida!</p>

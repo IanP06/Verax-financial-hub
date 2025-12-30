@@ -250,10 +250,10 @@ const useAnalystStore = create((set, get) => ({
             const batch = writeBatch(db);
 
             // Request Update
-            // NOTE: Status remains NEEDS_INVOICE until Verified.
+            // NOTE: User prompt says: "Tras subir PDF... mover status a READY_TO_PAY"
             batch.update(reqRef, {
-                // status: 'READY_TO_PAY', // REMOVED: Wait for Verification
-                invoiceStatus: 'UPLOADED', // [NEW]
+                status: 'READY_TO_PAY',
+                invoiceStatus: 'UPLOADED',
                 invoiceReceipt: {
                     url: url,
                     fileName: file.name,
@@ -268,9 +268,23 @@ const useAnalystStore = create((set, get) => ({
                 })
             });
 
-            // Invoices status remains PENDIENTE_FACTURA (or similar) until Verification?
-            // User: "El admin debe poder marcar Verify -> recién con VERIFIED se habilita READY_TO_PAY"
-            // So we do NOT update invoices here.
+            // 3. Update Invoices (Main + Mirror) -> PENDIENTE_PAGO
+            // This enables "Pagar" flow
+            const reqDataForIds = reqSnap.data();
+            if (reqDataForIds.invoiceIds && reqDataForIds.invoiceIds.length > 0) {
+                reqDataForIds.invoiceIds.forEach(invId => {
+                    // Main
+                    batch.update(doc(db, 'invoices', invId), {
+                        estadoPago: 'PENDIENTE_PAGO',
+                        paymentStatus: 'PENDIENTE_PAGO'
+                    });
+                    // Mirror
+                    batch.update(doc(db, `analyst_invoices/${analystUid}/items`, invId), {
+                        paymentStatus: 'PENDIENTE_PAGO',
+                        estadoPago: 'PENDIENTE_PAGO'
+                    });
+                });
+            }
 
             await batch.commit();
 

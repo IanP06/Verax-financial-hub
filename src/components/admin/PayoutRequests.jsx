@@ -37,9 +37,9 @@ const PayoutRequests = () => {
             const needsInvoice = req.requiresInvoiceSnapshot !== undefined ? req.requiresInvoiceSnapshot : (req.requiresInvoice || req.invoiceCRequired);
 
             // Flow Step 3:
-            // If needsInvoice -> req: NEEDS_INVOICE, inv: PENDIENTE_FACTURA
+            // If needsInvoice -> req: APPROVED_WAITING_INVOICE, inv: PENDIENTE_FACTURA
             // If NOT -> req: READY_TO_PAY, inv: PENDIENTE_PAGO
-            const nextStatus = needsInvoice ? 'NEEDS_INVOICE' : 'READY_TO_PAY';
+            const nextStatus = needsInvoice ? 'APPROVED_WAITING_INVOICE' : 'READY_TO_PAY';
             const nextInvoiceStatus = needsInvoice ? 'PENDIENTE_FACTURA' : 'PENDIENTE_PAGO';
 
             // 1. Update Request
@@ -81,14 +81,15 @@ const PayoutRequests = () => {
     };
 
     const handleVerifyInvoice = async (req) => {
-        if (!confirm("¿Marcar comprobante como VERIFICADO? Esto habilitará el pago.")) return;
+        if (!confirm("¿Marcar comprobante como VERIFICADO?")) return;
 
         try {
             const { writeBatch, arrayUnion } = await import('firebase/firestore');
             const batch = writeBatch(db);
             const reqRef = doc(db, 'payoutRequests', req.id);
 
-            // Transition to READY_TO_PAY
+            // Transition to READY_TO_PAY (if not already)
+            // User prompt allows Admin to manually verify to unlock payment
             batch.update(reqRef, {
                 status: 'READY_TO_PAY',
                 invoiceStatus: 'VERIFIED',
@@ -183,7 +184,7 @@ const PayoutRequests = () => {
             const reqRef = doc(db, 'payoutRequests', req.id);
 
             batch.update(reqRef, {
-                status: 'PAGO',
+                status: 'PAGO', // or PAID
                 paidAt: dateStr,
                 history: arrayUnion({
                     at: new Date().toISOString(),
@@ -224,18 +225,22 @@ const PayoutRequests = () => {
         const styles = {
             SUBMITTED: 'bg-blue-100 text-blue-800',
             PENDIENTE_APROBACION: 'bg-yellow-100 text-yellow-800',
-            NEEDS_INVOICE: 'bg-orange-100 text-orange-800',
+
+            APPROVED_WAITING_INVOICE: 'bg-orange-100 text-orange-800',
+            NEEDS_INVOICE: 'bg-orange-100 text-orange-800', // Legacy
             PENDIENTE_FACTURA: 'bg-orange-100 text-orange-800', // Legacy
+
             READY_TO_PAY: 'bg-purple-100 text-purple-800',
             PENDIENTE_PAGO: 'bg-purple-100 text-purple-800', // Unified
             APPROVED_SCHEDULED: 'bg-purple-100 text-purple-800', // Legacy
+
             PAGO: 'bg-green-100 text-green-800',
             PAID: 'bg-green-100 text-green-800',
             REJECTED: 'bg-red-100 text-red-800'
         };
         return (
             <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${styles[status] || 'bg-gray-100'}`}>
-                {status}
+                {status === 'APPROVED_WAITING_INVOICE' ? 'ESPERANDO FACTURA' : status}
             </span>
         );
     };
@@ -278,7 +283,7 @@ const PayoutRequests = () => {
                                             </>
                                         )}
 
-                                        {(req.status === 'NEEDS_INVOICE' || req.status === 'PENDIENTE_FACTURA') && (
+                                        {(req.status === 'APPROVED_WAITING_INVOICE' || req.status === 'NEEDS_INVOICE' || req.status === 'PENDIENTE_FACTURA') && (
                                             <div className="flex flex-col items-end gap-2">
                                                 {/* INVOICE STATUS */}
                                                 {req.invoiceStatus === 'UPLOADED' ? (
