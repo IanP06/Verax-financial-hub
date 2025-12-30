@@ -33,11 +33,13 @@ const PayoutRequests = () => {
             const reqRef = doc(db, 'payoutRequests', req.id);
 
             // Check if requires Invoice C
-            // The field in request should be 'requiresInvoice' (as set in store)
-            // Fallback to legacy 'invoiceCRequired' if older doc
-            const needsInvoice = req.requiresInvoice || req.invoiceCRequired;
+            // The field in request is 'requiresInvoiceSnapshot' (new) or 'requiresInvoice' (legacy/store param)
+            const needsInvoice = req.requiresInvoiceSnapshot !== undefined ? req.requiresInvoiceSnapshot : (req.requiresInvoice || req.invoiceCRequired);
 
-            const nextStatus = needsInvoice ? 'PENDIENTE_FACTURA' : 'PENDIENTE_PAGO';
+            // Flow Step 3:
+            // If needsInvoice -> req: NEEDS_INVOICE, inv: PENDIENTE_FACTURA
+            // If NOT -> req: READY_TO_PAY, inv: PENDIENTE_PAGO
+            const nextStatus = needsInvoice ? 'NEEDS_INVOICE' : 'READY_TO_PAY';
             const nextInvoiceStatus = needsInvoice ? 'PENDIENTE_FACTURA' : 'PENDIENTE_PAGO';
 
             // 1. Update Request
@@ -52,11 +54,10 @@ const PayoutRequests = () => {
                 })
             };
 
-            // Schedule payment date if direct to payment
+            // Schedule payment date defaults?
             if (!needsInvoice) {
-                const date = new Date();
-                date.setHours(date.getHours() + 48); // Standard 48h
-                updates.scheduledPaymentDate = date.toISOString();
+                // READY_TO_PAY
+                // Maybe set a default scheduled date?
             }
 
             batch.update(reqRef, updates);
@@ -185,10 +186,12 @@ const PayoutRequests = () => {
     const getStatusBadge = (status) => {
         const styles = {
             SUBMITTED: 'bg-blue-100 text-blue-800',
-            PENDIENTE_FACTURA: 'bg-orange-100 text-orange-800',
-            APPROVED_NEEDS_INVOICE: 'bg-orange-100 text-orange-800', // Legacy support
-            PENDIENTE_PAGO: 'bg-purple-100 text-purple-800',
-            APPROVED_SCHEDULED: 'bg-purple-100 text-purple-800', // Legacy support
+            PENDIENTE_APROBACION: 'bg-yellow-100 text-yellow-800',
+            NEEDS_INVOICE: 'bg-orange-100 text-orange-800',
+            PENDIENTE_FACTURA: 'bg-orange-100 text-orange-800', // Legacy
+            READY_TO_PAY: 'bg-purple-100 text-purple-800',
+            PENDIENTE_PAGO: 'bg-purple-100 text-purple-800', // Unified
+            APPROVED_SCHEDULED: 'bg-purple-100 text-purple-800', // Legacy
             PAGO: 'bg-green-100 text-green-800',
             PAID: 'bg-green-100 text-green-800',
             REJECTED: 'bg-red-100 text-red-800'
@@ -238,7 +241,7 @@ const PayoutRequests = () => {
                                             </>
                                         )}
 
-                                        {req.status === 'PENDIENTE_FACTURA' && (
+                                        {(req.status === 'NEEDS_INVOICE' || req.status === 'PENDIENTE_FACTURA') && (
                                             <div className="flex items-center gap-2">
                                                 {/* INVOICE UPLOADED LOGIC */}
                                                 {req.invoiceReceipt?.url ? (
@@ -251,10 +254,7 @@ const PayoutRequests = () => {
                                                         >
                                                             Descargar Factura C ({req.invoiceReceipt.fileName})
                                                         </a>
-                                                        {/* Enabled Pay Button */}
-                                                        <button onClick={() => handleMarkAsPaid(req)} className="text-green-600 font-medium ml-2 bg-green-50 px-2 py-1 rounded hover:bg-green-100">
-                                                            Marcar como PAGADO
-                                                        </button>
+                                                        {/* Force Pay if receipt exists - typically goes to READY_TO_PAY first though */}
                                                     </div>
                                                 ) : (
                                                     <span className="text-orange-600 italic font-medium bg-orange-50 px-2 py-1 rounded border border-orange-200">
@@ -264,7 +264,7 @@ const PayoutRequests = () => {
                                             </div>
                                         )}
 
-                                        {(req.status === 'PENDIENTE_PAGO' || req.status === 'APPROVED_SCHEDULED') && (
+                                        {(req.status === 'READY_TO_PAY' || req.status === 'PENDIENTE_PAGO' || req.status === 'APPROVED_SCHEDULED') && (
                                             <div className="flex items-center gap-2">
                                                 {/* If they had receipt, show logic */}
                                                 {req.invoiceReceipt?.url && (

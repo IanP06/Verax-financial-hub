@@ -102,18 +102,59 @@ const useInvoiceStore = create(
                 try {
                     // 1. Configurar Settings
                     const settingsRef = doc(db, 'settings', 'global');
-                    // Wrap in try-catch specifically for permission errors
+                    const rulesRef = collection(db, 'settings/analystRules/rules'); // Assuming structure based on user prompt context "settings/analystRules"
+                    // Wait, user said "settings/analystRules (ya existe)". Usually this means a collection or a doc?
+                    // "settings/analystRules (ya existe)" -> could be a doc with fields or collection.
+                    // Let's assume it's a collection of rules where each doc is an analyst, OR a single doc with a list.
+                    // Given the StagingTable code: "config?.analystRules?.find(r => r.name === newAnalyst)" implies an array.
+                    // Let's safe fetch: try to get collection docs.
+                    // Or maybe it is a doc 'settings/analystRules'?
+                    // Let's assume collection 'analystRules' inside 'settings' is NOT standard firestore (collections in docs).
+                    // Likely: collection('analystRules') or doc('settings', 'analystRules').
+                    // Checking prompt: "Firestore: settings/analystRules (ya existe)".
+                    // I will fetch collection('analystRules') if it exists at root, or subcollection?
+                    // Let's try to fetch both or assume root collection 'analystRules' or specific doc.
+                    // Usage in `StagingTable` implies it expects an array in `config.analystRules`.
+
                     try {
                         const settingsSnap = await getDoc(settingsRef);
-                        if (settingsSnap.exists()) {
-                            set({ config: { ...get().config, ...settingsSnap.data() } });
-                        } else {
-                            // Only admin can create. If 403, we catch below.
-                            await setDoc(settingsRef, get().config);
-                        }
+                        const globalConfig = settingsSnap.exists() ? settingsSnap.data() : {};
+
+                        // Fetch Analyst Rules
+                        // Try root collection 'analystRules' first or subcollection 'settings/global/analystRules'?
+                        // Most likely it is a separate collection 'analystRules' based on typical firebase patterns I've seen in this codebase,
+                        // OR it's a field in 'settings/global'?
+                        // Prompt says: "settings/analystRules". This usually means path "settings/analystRules".
+                        // So text "settings/analystRules" is the Document Reference? Or Collection Reference?
+                        // If it's a doc path, it's `doc(db, 'settings', 'analystRules')`.
+                        // If it contains rules for many analysts, it might be a Map or Array inside that doc.
+
+                        let rulesArray = [];
+                        try {
+                            const rulesSnap = await getDoc(doc(db, 'settings', 'analystRules'));
+                            if (rulesSnap.exists()) {
+                                // If it's a doc with keys as analyst names or a 'rules' field
+                                const data = rulesSnap.data();
+                                // Assume it might have a 'list' or keys are names.
+                                // Let's try to parse: if data has 'rules' array, use it.
+                                if (Array.isArray(data.rules)) {
+                                    rulesArray = data.rules;
+                                } else {
+                                    // Map object to array
+                                    rulesArray = Object.keys(data).map(key => ({ name: key, ...data[key] }));
+                                }
+                            }
+                        } catch (e) { console.warn("Rules fetch error:", e); }
+
+                        set({
+                            config: {
+                                ...get().config,
+                                ...globalConfig,
+                                analystRules: rulesArray
+                            }
+                        });
                     } catch (err) {
-                        console.warn("[Store] Settings load failed (likely permission):", err);
-                        // Continue, don't crash
+                        console.warn("[Store] Settings load failed:", err);
                     }
 
                     // 2. Cargar UserProfiles

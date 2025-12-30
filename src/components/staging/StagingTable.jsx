@@ -20,13 +20,15 @@ const StagingTable = () => {
         // Auto-set Savings % based on rules
         const rule = config?.analystRules?.find(r => r.name === newAnalyst);
         if (rule) {
-            updateStagingInvoice(id, 'plusPorAhorro', rule.pct);
+            // Prompt: plusPercentDefault
+            const def = rule.plusPercentDefault || rule.plusPercent || 0;
+            updateStagingInvoice(id, 'plusPorAhorro', def);
         }
     };
 
     const isRuleFixed = (analystName) => {
         const rule = config?.analystRules?.find(r => r.name === analystName);
-        return rule?.mode === 'FIXED';
+        return rule?.plusMode === 'FIJO';
     };
 
     return (
@@ -125,19 +127,29 @@ const StagingTable = () => {
                                     </td>
                                     <td className="p-2 bg-blue-50 dark:bg-slate-800">
                                         {/* PLUS AHORRO SMART */}
-                                        <div className="relative">
-                                            <input
-                                                type="number"
-                                                value={inv.plusPorAhorro}
-                                                onChange={(e) => updateStagingInvoice(inv.id, 'plusPorAhorro', e.target.value)}
-                                                disabled={isRuleFixed(inv.analista)}
-                                                className={`border rounded p-1 w-16 text-right dark:border-slate-600 dark:text-white 
-                                                    ${isRuleFixed(inv.analista) ? 'bg-gray-200 dark:bg-slate-600 text-gray-500' : 'bg-white dark:bg-slate-700'}`}
-                                            />
-                                            {isRuleFixed(inv.analista) && (
-                                                <span className="absolute top-0 right-0 -mt-2 -mr-1 text-[8px] bg-gray-200 px-1 rounded text-gray-500">FIX</span>
-                                            )}
-                                        </div>
+                                        {(() => {
+                                            const rule = config?.analystRules?.find(r => r.name === inv.analista);
+                                            // Rules: plusMode: "FIJO" | "EDITABLE"
+                                            const isFixed = rule?.plusMode === 'FIJO';
+                                            // Handle default if not set on invoice yet but rule exists? 
+                                            // Already handled in handleAnalystChange but good to enforce visual lock
+
+                                            return (
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        value={inv.plusPorAhorro}
+                                                        onChange={(e) => updateStagingInvoice(inv.id, 'plusPorAhorro', e.target.value)}
+                                                        disabled={isFixed}
+                                                        className={`border rounded p-1 w-16 text-right dark:border-slate-600 dark:text-white 
+                                                            ${isFixed ? 'bg-gray-200 dark:bg-slate-600 text-gray-500 cursor-not-allowed' : 'bg-white dark:bg-slate-700'}`}
+                                                    />
+                                                    {isFixed && (
+                                                        <span className="absolute top-0 right-0 -mt-2 -mr-1 text-[8px] bg-gray-200 px-1 rounded text-gray-500">FIJO</span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </td>
                                     <td className="p-2 bg-blue-50 dark:bg-slate-800">
                                         <input

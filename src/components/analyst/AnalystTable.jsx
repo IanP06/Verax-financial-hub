@@ -45,9 +45,19 @@ const AnalystTable = ({ invoices, onSelectionChange }) => {
             </span>;
         }
         // Yellow: In Progress (Any stage of Payout Request)
-        if (status === 'PENDIENTE' || status === 'EN_SOLICITUD' || status === 'PENDIENTE_FACTURA' || status === 'PENDIENTE_PAGO' || status === 'APPROVED_SCHEDULED' || status === 'APPROVED_NEEDS_INVOICE') {
+        if (status === 'PENDIENTE_APROBACION' || status === 'PENDIENTE' || status === 'EN_SOLICITUD') {
             return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                {status}
+                PENDIENTE
+            </span>;
+        }
+        if (status === 'PENDIENTE_FACTURA' || status === 'NEEDS_INVOICE') {
+            return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                FACTURA
+            </span>;
+        }
+        if (status === 'PENDIENTE_PAGO' || status === 'READY_TO_PAY') {
+            return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                A PAGAR
             </span>;
         }
         // Red: Default / Impago / Error

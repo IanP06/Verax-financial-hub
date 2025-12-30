@@ -30,17 +30,30 @@ const AnalystPayoutHistory = () => {
 
     const getStatusConfig = (status) => {
         switch (status) {
-            case 'SUBMITTED': return { color: 'bg-blue-100 text-blue-800', label: 'Enviada', icon: Clock };
-            case 'PENDIENTE_FACTURA': return { color: 'bg-orange-100 text-orange-800', label: 'Subir Factura C', icon: AlertCircle };
-            case 'PENDIENTE_PAGO': // Unified with Approved
-            case 'APPROVED_SCHEDULED':
-            case 'APPROVED_NEEDS_INVOICE':
-                return { color: 'bg-yellow-100 text-yellow-800', label: 'Pendiente Pago', icon: CheckCircle };
+            case 'SUBMITTED':
+                return { color: 'bg-blue-100 text-blue-800', label: 'En Revisión', icon: Clock };
+            case 'PENDIENTE_APROBACION': // Alias
+                return { color: 'bg-yellow-100 text-yellow-800', label: 'En Revisión (Admin)', icon: Clock };
+
+            case 'NEEDS_INVOICE': // Step 3b: Admin Approved, needs invoice
+                return { color: 'bg-orange-100 text-orange-800', label: 'Requiere Factura', icon: AlertCircle };
+            case 'PENDIENTE_FACTURA': // Legacy/Alias
+                return { color: 'bg-orange-100 text-orange-800', label: 'Subir Factura C', icon: AlertCircle };
+
+            case 'READY_TO_PAY': // Step 4: Invoice Uploaded, ready for payment
+                return { color: 'bg-purple-100 text-purple-800', label: 'Listo para Pagar', icon: CheckCircle };
+            case 'PENDIENTE_PAGO': // Unified
+                return { color: 'bg-purple-100 text-purple-800', label: 'Pendiente Pago', icon: CheckCircle };
+
             case 'PAID':
             case 'PAGO':
                 return { color: 'bg-green-100 text-green-800', label: 'Pagada', icon: CheckCircle };
-            case 'REJECTED': return { color: 'bg-red-100 text-red-800', label: 'Rechazada', icon: XCircle };
-            default: return { color: 'bg-gray-100 text-gray-800', label: status, icon: AlertCircle };
+
+            case 'REJECTED':
+                return { color: 'bg-red-100 text-red-800', label: 'Rechazada', icon: XCircle };
+
+            default:
+                return { color: 'bg-gray-100 text-gray-800', label: status, icon: AlertCircle };
         }
     };
 
@@ -97,8 +110,8 @@ const AnalystPayoutHistory = () => {
 
                         {expandedId === req.id && (
                             <div className="bg-gray-50 dark:bg-slate-900/50 p-4 border-t border-gray-200 dark:border-slate-700">
-                                {/* Upload Action for PENDIENTE_FACTURA */}
-                                {req.status === 'PENDIENTE_FACTURA' && (
+                                { /* Upload Action for NEEDS_INVOICE */}
+                                {(req.status === 'NEEDS_INVOICE' || req.status === 'PENDIENTE_FACTURA') && (
                                     <div className="mb-4 bg-orange-50 dark:bg-orange-900/20 p-4 rounded border border-orange-200 dark:border-orange-800 flex flex-col sm:flex-row items-center justify-between gap-4">
                                         <div>
                                             <p className="font-bold text-orange-800 dark:text-orange-300">¡Acción requerida!</p>

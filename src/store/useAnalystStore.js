@@ -173,12 +173,12 @@ const useAnalystStore = create((set, get) => ({
                 analystUid: uid,
                 analystName: analystName,
                 createdAt: serverTimestamp(),
-                status: 'SUBMITTED', // Initial status
+                status: 'SUBMITTED',
                 invoiceIds: invoiceIds,
                 invoiceSnapshot: invoiceSnapshot,
                 totalAmount: totalAmount,
-                expiresAt: null, // Placeholder if needed
-                requiresInvoice: !!requiresInvoice, // Ensure bool
+                expiresAt: null,
+                requiresInvoiceSnapshot: !!requiresInvoice, // Snapshot the rule state at creation time
                 invoiceReceipt: null,
                 history: [
                     {
@@ -192,13 +192,13 @@ const useAnalystStore = create((set, get) => ({
             // Add Request to Batch
             batch.set(requestRef, requestData);
 
-            // 2. Update Invoices to PENDIENTE
+            // 2. Update Invoices to PENDIENTE_APROBACION
             invoiceIds.forEach(invId => {
-                // Update MAIN invoices collection to ensure single source of truth is blocked
+                // Update MAIN invoices collection
                 const invRef = doc(db, 'invoices', invId);
                 batch.update(invRef, {
-                    estadoPago: 'PENDIENTE',
-                    paymentStatus: 'PENDIENTE',
+                    estadoPago: 'PENDIENTE_APROBACION',
+                    paymentStatus: 'PENDIENTE_APROBACION', // Ensure consistent alias
                     linkedPayoutRequestId: requestId,
                     payoutRequestedAt: serverTimestamp()
                 });
@@ -206,8 +206,8 @@ const useAnalystStore = create((set, get) => ({
                 // Update MIRROR
                 const mirrorRef = doc(db, `analyst_invoices/${uid}/items`, invId);
                 batch.update(mirrorRef, {
-                    paymentStatus: 'PENDIENTE',
-                    estadoPago: 'PENDIENTE',
+                    paymentStatus: 'PENDIENTE_APROBACION',
+                    estadoPago: 'PENDIENTE_APROBACION',
                     linkedPayoutRequestId: requestId
                 });
             });
@@ -256,12 +256,13 @@ const useAnalystStore = create((set, get) => ({
 
             // Request Update
             batch.update(reqRef, {
-                status: 'PENDIENTE_PAGO', // Transitions to Payment Pending
+                status: 'READY_TO_PAY', // Flow Step 4: Analista sube comp -> READY_TO_PAY
                 invoiceReceipt: {
                     url: url,
                     fileName: file.name,
                     uploadedAt: new Date().toISOString(),
-                    uploadedByUid: analystUid
+                    uploadedByUid: analystUid,
+                    storagePath: `payout_receipts/${requestId}/${file.name}`
                 },
                 history: arrayUnion({
                     at: new Date().toISOString(),
