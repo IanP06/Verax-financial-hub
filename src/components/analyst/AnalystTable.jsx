@@ -30,7 +30,11 @@ const AnalystTable = ({ invoices, onSelectionChange }) => {
     };
 
     const isEligibleForCashout = (inv) => {
-        return inv.estadoPago === 'IMPAGO' && (inv.diasDesdeEmision || 0) >= 40 && !inv.linkedPayoutRequestId;
+        // Exclude if PAGO, PENDIENTE, EN_SOLICITUD, PENDIENTE_PAGO
+        const status = inv.estadoPago || 'IMPAGO';
+        if (status !== 'IMPAGO') return false;
+        // Strict IMPAGO check handles PENDIENTE/PAGO exclusion
+        return (inv.diasDesdeEmision || 0) >= 40 && !inv.linkedPayoutRequestId;
     };
 
     return (
@@ -112,7 +116,8 @@ const AnalystTable = ({ invoices, onSelectionChange }) => {
                                     <td className="px-6 py-4 whitespace-nowrap text-center">
                                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
                                             ${inv.estadoPago === 'PAGO' ? 'bg-green-100 text-green-800' :
-                                                inv.estadoPago === 'EN_SOLICITUD' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                                                (inv.estadoPago === 'PENDIENTE' || inv.estadoPago === 'EN_SOLICITUD' || inv.estadoPago === 'PENDIENTE_PAGO') ? 'bg-yellow-100 text-yellow-800' :
+                                                    'bg-red-100 text-red-800'}`}>
                                             {inv.estadoPago}
                                         </span>
                                     </td>

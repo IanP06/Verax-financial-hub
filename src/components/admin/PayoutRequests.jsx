@@ -28,20 +28,50 @@ const PayoutRequests = () => {
         if (!confirm("¿Aprobar solicitud?")) return;
 
         try {
+            const { writeBatch } = await import('firebase/firestore');
+            const batch = writeBatch(db);
+            const reqRef = doc(db, 'payoutRequests', req.id);
+
             const nextStatus = req.invoiceCRequired ? 'APPROVED_NEEDS_INVOICE' : 'APPROVED_SCHEDULED';
+
+            // 1. Update Request
             const updates = {
                 status: nextStatus,
-                approvedAt: serverTimestamp()
+                approvedAt: serverTimestamp(),
+                // Append output history (arrayUnion equivalent manually or read/write? simpler to just set whole array if we had previous, but we don't fetch full object often. 
+                // Let's assume we can push to array or use arrayUnion. Firestore arrayUnion is safe.)
             };
 
+            const { arrayUnion } = await import('firebase/firestore');
+            updates.history = arrayUnion({
+                at: new Date().toISOString(),
+                byRole: 'admin',
+                action: 'APPROVED',
+                note: 'Aprobado por administración'
+            });
+
             if (!req.invoiceCRequired) {
-                // Schedule for 48h from now
                 const date = new Date();
                 date.setHours(date.getHours() + 48);
                 updates.scheduledPaymentDate = date.toISOString();
             }
 
-            await updateDoc(doc(db, 'payoutRequests', req.id), updates);
+            batch.update(reqRef, updates);
+
+            // 2. Update Invoices (Main + Mirror) to PENDIENTE_PAGO
+            req.invoiceIds.forEach(invId => {
+                // Main
+                batch.update(doc(db, 'invoices', invId), {
+                    estadoPago: 'PENDIENTE_PAGO',
+                    paymentStatus: 'PENDIENTE_PAGO'
+                });
+                // Mirror
+                batch.update(doc(db, `analyst_invoices/${req.analystUid}/items`, invId), {
+                    paymentStatus: 'PENDIENTE_PAGO'
+                });
+            });
+
+            await batch.commit();
             fetchRequests();
         } catch (e) {
             console.error("Error approving:", e);
@@ -49,27 +79,40 @@ const PayoutRequests = () => {
     };
 
     const handleReject = async (req) => {
-        const reason = prompt("Motivo del rechazo:");
+        const reason = prompt("Motivo del rechazo (Obligatorio):");
         if (!reason) return;
 
         try {
-            // Batch: Update Request + Update Analyst Invoices (Reset status)
-            const { writeBatch } = await import('firebase/firestore');
+            const { writeBatch, arrayUnion } = await import('firebase/firestore');
             const batch = writeBatch(db);
             const reqRef = doc(db, 'payoutRequests', req.id);
 
             batch.update(reqRef, {
                 status: 'REJECTED',
                 rejectionReason: reason,
-                rejectedAt: serverTimestamp()
+                rejectedAt: serverTimestamp(),
+                history: arrayUnion({
+                    at: new Date().toISOString(),
+                    byRole: 'admin',
+                    action: 'REJECTED',
+                    note: reason
+                })
             });
 
-            // Reset Invoices in Mirror
-            // Note: We only have invoice IDs. We need the analyst UID to update the mirror.
-            // Luckily, req has analystUid.
+            // Revert Invoices (Main + Mirror) to IMPAGO
             req.invoiceIds.forEach(invId => {
-                const invRef = doc(db, `analyst_invoices/${req.analystUid}/items`, invId);
-                batch.update(invRef, {
+                const fieldsToReset = {
+                    estadoPago: 'IMPAGO',
+                    paymentStatus: 'IMPAGO',
+                    linkedPayoutRequestId: null,
+                    payoutRequestedAt: null
+                };
+
+                // Main
+                batch.update(doc(db, 'invoices', invId), fieldsToReset);
+
+                // Mirror
+                batch.update(doc(db, `analyst_invoices/${req.analystUid}/items`, invId), {
                     paymentStatus: 'IMPAGO',
                     linkedPayoutRequestId: null
                 });
@@ -224,11 +267,48 @@ const PayoutRequests = () => {
                                         )}
                                     </div>
                                 </div>
-                                {req.scheduledPaymentDate && (
-                                    <div className="mt-2 text-xs text-purple-600 font-medium">
-                                        Programado: {new Date(req.scheduledPaymentDate).toLocaleDateString()}
-                                    </div>
+                                <div className="mt-2 text-xs text-purple-600 font-medium">
+                                    Programado: {new Date(req.scheduledPaymentDate).toLocaleDateString()}
+                                </div>
                                 )}
+
+                                <div className="mt-4">
+                                    <button
+                                        onClick={() => setSelectedReq(selectedReq === req.id ? null : req.id)}
+                                        className="text-xs text-gray-500 hover:text-gray-900 underline"
+                                    >
+                                        {selectedReq === req.id ? 'Ocultar Detalle' : 'Ver Detalle y Facturas'}
+                                    </button>
+
+                                    {selectedReq === req.id && (
+                                        <div className="mt-3 bg-gray-50 p-3 rounded text-sm">
+                                            {req.invoiceSnapshot ? (
+                                                <table className="min-w-full text-xs">
+                                                    <thead>
+                                                        <tr className="text-left text-gray-500">
+                                                            <th>Factura</th>
+                                                            <th>Siniestro</th>
+                                                            <th>Aseguradora</th>
+                                                            <th className="text-right">Monto</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {req.invoiceSnapshot.map((inv, idx) => (
+                                                            <tr key={idx} className="border-t border-gray-200">
+                                                                <td className="py-1">{inv.nroFactura}</td>
+                                                                <td className="py-1">{inv.siniestro}</td>
+                                                                <td className="py-1">{inv.aseguradora}</td>
+                                                                <td className="py-1 text-right">${Number(inv.total).toLocaleString()}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            ) : (
+                                                <p className="text-gray-500 italic">No hay snapshot disponible.</p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </li>
                     ))}
