@@ -32,3 +32,21 @@ El archivo `vercel.json` incluido en la raíz gestiona las reglas de reescritura
 *   Zustand (State Management)
 *   Recharts (KPIs)
 *   PDF.js (OCR Local)
+
+## Alta Masiva de Usuarios (Scripts)
+
+Para inicializar usuarios analistas en Firebase Auth y crear sus perfiles en Firestore:
+
+1.  **Credenciales**:
+    *   Descargar una nueva clave privada (JSON) de Service Account desde la consola de Firebase: *Project Settings -> Service Accounts -> Generate new private key*.
+    *   Guardar el archivo como `serviceAccountKey.json` en la raíz del proyecto. (**IMPORTANTE**: Este archivo está ignorado por git, NO subirlo).
+
+2.  **Ejecutar Script**:
+    Asegurarse de haber instalado las dependencias (`npm install`).
+    ```bash
+    node scripts/createUsers.mjs
+    ```
+
+3.  **Resultado**:
+    *   El script creará los usuarios definidos si no existen (Password default: `VERAX1234`).
+    *   Si el usuario ya existe, actualizará su perfil (Role: `analyst`) en Firestore asegurando la consistencia.
