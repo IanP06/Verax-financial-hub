@@ -1,28 +1,25 @@
 import React, { useState, useMemo } from 'react';
-
-// Helper for date diff
-const getDaysSince = (dateStr) => {
-    if (!dateStr) return "-";
-    const [d, m, y] = dateStr.split('/');
-    const issueDate = new Date(y, m - 1, d);
-    const today = new Date();
-    const diffTime = Math.abs(today - issueDate);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-};
+import { normalizeInvoiceForAnalyst } from '../../utils/invoiceNormalizer';
 
 const AnalystTable = ({ invoices, onSelectionChange }) => {
     const [filter, setFilter] = useState('');
     const [selectedIds, setSelectedIds] = useState([]);
 
+    // 1. Normalize Data
+    const normalizedInvoices = useMemo(() => {
+        return (invoices || []).map(inv => normalizeInvoiceForAnalyst(inv));
+    }, [invoices]);
+
+    // 2. Filter Normalized Data
     const filteredInvoices = useMemo(() => {
-        if (!filter) return invoices;
+        if (!filter) return normalizedInvoices;
         const lower = filter.toLowerCase();
-        return invoices.filter(inv =>
-            inv.invoiceNumber?.toLowerCase().includes(lower) ||
-            inv.claimNumber?.toLowerCase().includes(lower) ||
-            inv.insurer?.toLowerCase().includes(lower)
+        return normalizedInvoices.filter(inv =>
+            inv.factura?.toLowerCase().includes(lower) ||
+            inv.siniestro?.toLowerCase().includes(lower) ||
+            inv.compania?.toLowerCase().includes(lower)
         );
-    }, [invoices, filter]);
+    }, [normalizedInvoices, filter]);
 
     const handleCheckbox = (id) => {
         setSelectedIds(prev => {
@@ -33,8 +30,7 @@ const AnalystTable = ({ invoices, onSelectionChange }) => {
     };
 
     const isEligibleForCashout = (inv) => {
-        const days = getDaysSince(inv.issueDate);
-        return inv.paymentStatus === 'IMPAGO' && days >= 40 && !inv.linkedPayoutRequestId;
+        return inv.estadoPago === 'IMPAGO' && (inv.diasDesdeEmision || 0) >= 40 && !inv.linkedPayoutRequestId;
     };
 
     return (
@@ -81,7 +77,6 @@ const AnalystTable = ({ invoices, onSelectionChange }) => {
                     </thead>
                     <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
                         {filteredInvoices.map((inv) => {
-                            const days = getDaysSince(inv.issueDate);
                             const eligible = isEligibleForCashout(inv);
 
                             return (
@@ -97,28 +92,28 @@ const AnalystTable = ({ invoices, onSelectionChange }) => {
                                         )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                                        {inv.invoiceNumber}
+                                        {inv.factura || '-'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                        {inv.claimNumber}
+                                        {inv.siniestro || '-'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                        {inv.insurer}
+                                        {inv.compania || '-'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                        {inv.issueDate}
+                                        {inv.fechaEmision || '-'}
                                     </td>
-                                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${days >= 40 && inv.paymentStatus === 'IMPAGO' ? 'text-red-500' : 'text-gray-500'}`}>
-                                        {days}
+                                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${eligible ? 'text-red-500' : 'text-gray-500'}`}>
+                                        {inv.diasDesdeEmision !== null ? inv.diasDesdeEmision : '-'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white font-mono">
-                                        ${Number(inv.totalToLiquidate).toLocaleString()}
+                                        ${inv.aLiquidar.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-center">
                                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                            ${inv.paymentStatus === 'PAGADO' ? 'bg-green-100 text-green-800' :
-                                                inv.paymentStatus === 'EN_SOLICITUD' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                                            {inv.paymentStatus}
+                                            ${inv.estadoPago === 'PAGO' ? 'bg-green-100 text-green-800' :
+                                                inv.estadoPago === 'EN_SOLICITUD' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                                            {inv.estadoPago}
                                         </span>
                                     </td>
                                 </tr>

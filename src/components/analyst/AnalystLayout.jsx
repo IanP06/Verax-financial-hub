@@ -28,7 +28,7 @@ const AnalystLayout = () => {
             <header className="bg-white dark:bg-slate-950 shadow">
                 <div className="mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
                     <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">
-                        Portal Analistas
+                        Verax Financial Hub - Analistas
                     </h1>
                     <div className="flex items-center gap-4">
                         <span className="text-sm text-gray-500 dark:text-gray-400">
