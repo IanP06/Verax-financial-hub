@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Clock, CheckCircle, XCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import useAnalystStore from '../../store/useAnalystStore';
-import useAuth from '../../hooks/useAuth'; // Assuming this path for useAuth
+import { useAuth } from '../../context/AuthContext';
 
 const AnalystPayoutHistory = () => {
     const { payoutRequests, requestsError, uploadInvoiceReceipt, loading } = useAnalystStore(); // Added uploadInvoiceReceipt
