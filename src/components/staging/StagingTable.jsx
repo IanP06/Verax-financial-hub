@@ -45,6 +45,7 @@ const StagingTable = () => {
 
                             {/* Liquidación */}
                             <th className="p-2 bg-blue-50 dark:bg-slate-800">GESTION A PAGAR</th>
+                            <th className="p-2 bg-blue-50 dark:bg-slate-800">Ahorro Total (Base)</th>
                             <th className="p-2 bg-blue-50 dark:bg-slate-800">Plus Ahorro (%)</th>
                             <th className="p-2 bg-blue-50 dark:bg-slate-800">AHORRO A PAGAR</th>
                             <th className="p-2 bg-blue-50 dark:bg-slate-800">Viaticos</th>
@@ -55,7 +56,7 @@ const StagingTable = () => {
                     </thead>
                     <tbody>
                         {stagingInvoices.length === 0 ? (
-                            <tr><td colSpan="10" className="p-4 text-center text-gray-400">No hay facturas pendientes.</td></tr>
+                            <tr><td colSpan="11" className="p-4 text-center text-gray-400">No hay facturas pendientes.</td></tr>
                         ) : (
                             stagingInvoices.map((inv) => (
                                 <tr key={inv.id} className="border-b dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800 align-top transition-colors">
@@ -85,7 +86,7 @@ const StagingTable = () => {
                                         </select>
                                     </td>
 
-                                    {/* Monto Editable */}
+                                    {/* Monto Fact (Display Only / Input?) kept for reference but not for calc now */}
                                     <td className="p-2">
                                         <input
                                             type="text"
@@ -114,6 +115,15 @@ const StagingTable = () => {
                                         <input type="number" value={inv.montoGestion} onChange={(e) => updateStagingInvoice(inv.id, 'montoGestion', e.target.value)} className="border rounded p-1 w-16 text-right dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
                                     </td>
                                     <td className="p-2 bg-blue-50 dark:bg-slate-800">
+                                        <input
+                                            type="number"
+                                            placeholder="0"
+                                            value={inv.ahorroTotal || ''}
+                                            onChange={(e) => updateStagingInvoice(inv.id, 'ahorroTotal', e.target.value)}
+                                            className="border rounded p-1 w-20 text-right font-bold text-green-600 dark:bg-slate-700 dark:border-slate-600 dark:text-green-400"
+                                        />
+                                    </td>
+                                    <td className="p-2 bg-blue-50 dark:bg-slate-800">
                                         {/* PLUS AHORRO SMART */}
                                         <div className="relative">
                                             <input
@@ -130,7 +140,12 @@ const StagingTable = () => {
                                         </div>
                                     </td>
                                     <td className="p-2 bg-blue-50 dark:bg-slate-800">
-                                        <input type="number" value={inv.ahorroAPagar} onChange={(e) => updateStagingInvoice(inv.id, 'ahorroAPagar', e.target.value)} className="border rounded p-1 w-16 text-right dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+                                        <input
+                                            type="number"
+                                            value={inv.ahorroAPagar}
+                                            readOnly
+                                            className="border rounded p-1 w-16 text-right bg-gray-100 text-gray-600 dark:bg-black/20 dark:border-slate-600 dark:text-gray-300 cursor-not-allowed"
+                                        />
                                     </td>
                                     <td className="p-2 bg-blue-50 dark:bg-slate-800">
                                         <input type="number" value={inv.viaticosAPagar} onChange={(e) => updateStagingInvoice(inv.id, 'viaticosAPagar', e.target.value)} className="border rounded p-1 w-16 text-right dark:bg-slate-700 dark:border-slate-600 dark:text-white" />

@@ -240,23 +240,26 @@ const PayoutRequests = () => {
 
                                         {req.status === 'PENDIENTE_FACTURA' && (
                                             <div className="flex items-center gap-2">
+                                                {/* INVOICE UPLOADED LOGIC */}
                                                 {req.invoiceReceipt?.url ? (
-                                                    <a
-                                                        href={req.invoiceReceipt.url}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="text-blue-600 underline font-medium"
-                                                    >
-                                                        Descargar F.C ({req.invoiceReceipt.fileName})
-                                                    </a>
-                                                ) : <span className="text-orange-500 italic text-xs">Esperando F.C...</span>}
-
-                                                {/* Allow marking as paid only if receipt exists? Or give manual override? */}
-                                                {/* Spec says: "cuando exista invoiceReceipt.url ... se habilita Pagar" */}
-                                                {req.invoiceReceipt?.url && (
-                                                    <button onClick={() => handleMarkAsPaid(req)} className="text-green-600 font-medium ml-2">
-                                                        Pagar
-                                                    </button>
+                                                    <div className="flex items-center gap-2">
+                                                        <a
+                                                            href={req.invoiceReceipt.url}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="text-blue-600 underline font-medium"
+                                                        >
+                                                            Descargar Factura C ({req.invoiceReceipt.fileName})
+                                                        </a>
+                                                        {/* Enabled Pay Button */}
+                                                        <button onClick={() => handleMarkAsPaid(req)} className="text-green-600 font-medium ml-2 bg-green-50 px-2 py-1 rounded hover:bg-green-100">
+                                                            Marcar como PAGADO
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-orange-600 italic font-medium bg-orange-50 px-2 py-1 rounded border border-orange-200">
+                                                        Esperando comprobante...
+                                                    </span>
                                                 )}
                                             </div>
                                         )}

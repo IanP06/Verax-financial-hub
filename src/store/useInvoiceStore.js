@@ -172,6 +172,7 @@ const useInvoiceStore = create(
                 const defaults = {
                     montoGestion: state.config.montoGestion || 20000,
                     plusPorAhorro: Number(inv.plusPorAhorro) || 0,
+                    ahorroTotal: 0, // NEW field
                     ahorroAPagar: 0,
                     viaticosAPagar: 0,
                     estadoPago: 'IMPAGO',
@@ -190,17 +191,13 @@ const useInvoiceStore = create(
                     if (i.id !== id) return i;
                     const updated = { ...i, [field]: value };
 
-                    // Auto-calc Ahorro Amount if Percentage or Base values change
-                    if (['monto', 'montoGestion', 'plusPorAhorro'].includes(field)) {
-                        const amount = Number(updated.monto) || 0;
-                        const gestion = Number(updated.montoGestion) || 0;
+                    // Auto-calc Ahorro Amount if Savings Base or Percentage changes
+                    if (['montoGestion', 'plusPorAhorro', 'ahorroTotal'].includes(field)) {
+                        const savingsBase = Number(updated.ahorroTotal) || 0;
                         const pct = Number(updated.plusPorAhorro) || 0;
 
-                        // Only auto-calc if we have positive savings and a percentage is set
-                        if (amount > gestion && pct > 0) {
-                            const savings = amount - gestion;
-                            updated.ahorroAPagar = Math.round(savings * (pct / 100));
-                        }
+                        // New Formula: AhorroAPagar = AhorroTotal * Pct%
+                        updated.ahorroAPagar = Math.round(savingsBase * (pct / 100));
                     }
 
                     // Recalc Total
