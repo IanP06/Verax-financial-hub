@@ -9,8 +9,16 @@ const AnalystLayout = () => {
 
     useEffect(() => {
         if (user?.uid) {
-            console.log(`[AnalystLayout] Fetching data for ${user.displayName} (${user.uid})`);
-            fetchAnalystData(user.uid);
+            // Determine the key to use for querying
+            // Priority: profile.analystKey > profile.displayName > auth.displayName
+            const keyToUse = user.analystKey || user.displayName;
+            console.log(`[AnalystLayout] Fetching data for UID: ${user.uid} using Key: ${keyToUse}`);
+
+            if (keyToUse) {
+                fetchAnalystData(user.uid, keyToUse);
+            } else {
+                console.warn("[AnalystLayout] No analyst key identifier found for user");
+            }
         }
     }, [user, fetchAnalystData]);
 
