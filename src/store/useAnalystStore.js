@@ -141,7 +141,36 @@ const useAnalystStore = create((set, get) => ({
         }
     },
 
-    createPayoutRequest: async (uid, analystName, selectedInvoices, requiresInvoice) => {
+    // INTERNAL: Fetch Single Rule On-Demand (No Cache Reliance)
+    fetchAnalystRule: async (analystName) => {
+        if (!analystName) return null;
+        try {
+            const { normalizeName } = await import('../utils/text');
+            const targetName = normalizeName(analystName);
+
+            // Direct Firestore Fetch
+            const rulesRef = doc(db, 'settings', 'analystRules');
+            const docSnap = await getDoc(rulesRef);
+
+            if (!docSnap.exists()) {
+                console.warn(`[Rules] Rules document not found.`);
+                return null;
+            }
+
+            const data = docSnap.data();
+            const rules = data.rules || [];
+
+            // Find match
+            const match = rules.find(r => normalizeName(r.name) === targetName);
+            return match || null;
+
+        } catch (e) {
+            console.error("[Rules] Error fetching rule:", e);
+            return null;
+        }
+    },
+
+    createPayoutRequest: async (uid, analystName, selectedInvoices, /* legacyArg ignored */) => {
         // selectedInvoices: Array of full invoice objects
         if (!uid || selectedInvoices.length === 0) return;
 
@@ -150,8 +179,16 @@ const useAnalystStore = create((set, get) => ({
             // Import batch
             const { writeBatch } = await import('firebase/firestore');
             const batch = writeBatch(db);
+            const { normalizeName } = await import('../utils/text');
 
-            // Calculate Total
+            // --- CRITICAL RULE CHECK ---
+            // Fetch fresh rule from Firestore (avoid store race conditions)
+            const rule = await get().fetchAnalystRule(analystName);
+            const requiresInvoice = rule?.requiresInvoice === true;
+
+            const normName = normalizeName(analystName);
+            console.log(`[Rules] Analyst ${analystName} normalized=${normName} requiresInvoice=${requiresInvoice} source=firestore`);
+            // ---------------------------
             const totalAmount = selectedInvoices.reduce((sum, inv) => sum + getAnalystTotal(inv), 0);
             const invoiceIds = selectedInvoices.map(i => i.id);
 
