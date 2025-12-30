@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import useAnalystStore from '../../store/useAnalystStore';
 
+import { getAnalystTotal } from '../../utils/money';
+
 const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfile }) => {
     const { createPayoutRequest } = useAnalystStore();
     const [loading, setLoading] = useState(false);
@@ -9,7 +11,7 @@ const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfil
 
     // Filter full invoice objects
     const selectedInvoices = invoices.filter(i => selectedIds.includes(i.id));
-    const totalAmount = selectedInvoices.reduce((sum, i) => sum + (Number(i.totalToLiquidate) || 0), 0);
+    const totalAmount = selectedInvoices.reduce((sum, i) => sum + getAnalystTotal(i), 0);
 
     const handleConfirm = async () => {
         setLoading(true);
@@ -40,15 +42,27 @@ const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfil
                         Está a punto de solicitar el pago por las siguientes facturas:
                     </p>
                     <ul className="max-h-40 overflow-y-auto list-disc pl-5 text-sm text-gray-500 space-y-1">
-                        {selectedInvoices.map(inv => (
-                            <li key={inv.id}>
-                                {inv.insurer} - {inv.invoiceNumber} (${Number(inv.totalToLiquidate).toLocaleString()})
-                            </li>
-                        ))}
+                        {selectedInvoices.map(inv => {
+                            const amount = getAnalystTotal(inv);
+                            return (
+                                <li key={inv.id}>
+                                    {inv.insurer || inv.aseguradora} - {inv.invoiceNumber || inv.factura || inv.nroFactura}
+                                    {amount > 0 ? (
+                                        <span className="font-semibold ml-1">
+                                            (${amount.toLocaleString('es-AR', { minimumFractionDigits: 2 })})
+                                        </span>
+                                    ) : (
+                                        <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                            MONTO INVÁLIDO
+                                        </span>
+                                    )}
+                                </li>
+                            );
+                        })}
                     </ul>
                     <div className="border-t pt-2 mt-4 flex justify-between font-bold text-gray-900 dark:text-white">
                         <span>Total a Solicitar:</span>
-                        <span>${totalAmount.toLocaleString()}</span>
+                        <span>${totalAmount.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                     </div>
                     {userProfile?.requiresInvoice && (
                         <div className="bg-yellow-50 p-3 rounded text-xs text-yellow-800">

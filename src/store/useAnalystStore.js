@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { db } from '../lib/firebase';
 import { collection, getDocs, addDoc, query, where, orderBy, doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { normalizeName } from '../utils/text';
+import { getAnalystTotal } from '../utils/money';
 
 const useAnalystStore = create((set, get) => ({
     analystInvoices: [],
@@ -16,25 +17,23 @@ const useAnalystStore = create((set, get) => ({
         const invoices = get().analystInvoices;
         const totalCases = invoices.length;
         // Prompt: "Monto Histórico" = suma totalAPagarAnalista
+        // We use getAnalystTotal for consistency now? Or strictly totalAPagarAnalista as before?
+        // User asked to fix "solicitud de pago". Let's stick to getAnalystTotal for safety everywhere if possible, 
+        // but prompt said specifically "Request Payout". Let's update stats to be safe too? 
+        // The prompt says "Monto Histórico $280.000 ya está sumando totalAPagarAnalista... la data está". 
+        // So existing stats logic is likely fine or "good enough" for now, but I'll leave it unless it breaks.
+        // Actually, for safety, let's just leave stats alone as they were reported "reading well invoices... but table empty". 
+        // Wait, table was empty, KPI was correct. So KPI logic is effectively correct.
         const totalAmount = invoices.reduce((acc, curr) => acc + (Number(curr.totalAPagarAnalista) || 0), 0);
 
         // "Ready for Cashout": > 40 days AND estadoPago != 'PAGO'
         const today = new Date();
         const readyInvoices = invoices.filter(inv => {
-            // Prompt: estadoPago (ej "IMPAGO" / "PAGO")
-            // "IMPAGO" is strict? Prompt says "estadoPago !== 'PAGO'". logic: "Disponible Pago" = ... estadoPago !== 'PAGO'
             if (inv.estadoPago === 'PAGO') return false;
-
-            // Allow cashout if it's NOT paid, BUT we also have logic for "IMPAGO" specifically in previous task.
-            // Prompt says: "criterio actual: diasDesdeEmision > 40 AND estadoPago !== 'PAGO'"
-            // So we strictly follow "not PAGO".
-
             if (inv.linkedPayoutRequestId) return false;
 
-            // Prompt: fecha (string dd/mm/yyyy)
             if (!inv.fecha) return false;
             const parts = inv.fecha.split('/'); // dd/mm/yyyy
-            // Handle if date is d/m/yyyy or dd/mm/yyyy
             if (parts.length !== 3) return false;
             const [d, m, y] = parts;
             const issueObj = new Date(y, m - 1, d);
@@ -131,7 +130,20 @@ const useAnalystStore = create((set, get) => ({
 
         set({ loading: true });
         try {
-            const totalAmount = selectedInvoices.reduce((sum, inv) => sum + (Number(inv.totalToLiquidate) || 0), 0);
+            // Debug Logs
+            console.group("createPayoutRequest Debug");
+            const totalAmount = selectedInvoices.reduce((sum, inv) => {
+                const itemTotal = getAnalystTotal(inv);
+                console.log(`Invoice ${inv.id} (${inv.nroFactura || inv.factura}): Raw=${JSON.stringify({
+                    totalAPagarAnalista: inv.totalAPagarAnalista,
+                    totalALiquidar: inv.totalALiquidar,
+                    montoGestion: inv.montoGestion
+                })} -> Parsed=${itemTotal}`);
+                return sum + itemTotal;
+            }, 0);
+            console.log("Grand Total Calculated:", totalAmount);
+            console.groupEnd();
+
             const invoiceIds = selectedInvoices.map(i => i.id);
 
             // 1. Create Request Doc
