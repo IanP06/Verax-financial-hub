@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, UploadCloud, FileSpreadsheet, Settings } from 'lucide-react';
+import { LayoutDashboard, UploadCloud, FileSpreadsheet, Settings, DollarSign } from 'lucide-react';
 
 const Sidebar = ({ theme, toggleTheme }) => {
     const linkClasses = ({ isActive }) =>
@@ -32,6 +32,11 @@ const Sidebar = ({ theme, toggleTheme }) => {
                 <NavLink to="/dashboard" className={linkClasses}>
                     <LayoutDashboard size={20} />
                     <span className="font-medium">Dashboard</span>
+                </NavLink>
+
+                <NavLink to="/payouts" className={linkClasses}>
+                    <DollarSign size={20} />
+                    <span className="font-medium">Solicitudes Pago</span>
                 </NavLink>
             </nav>
 

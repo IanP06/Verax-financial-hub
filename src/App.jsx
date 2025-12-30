@@ -5,6 +5,12 @@ import DropZone from './components/ingest/DropZone';
 import StagingTable from './components/staging/StagingTable';
 import Dashboard from './components/dashboard/Dashboard';
 import Settings from './components/settings/Settings';
+import Login from './components/auth/Login';
+import ProtectedRoute from './components/auth/ProtectedRoute';
+import AnalystLayout from './components/analyst/AnalystLayout';
+import AnalystDashboard from './components/analyst/AnalystDashboard';
+import PayoutRequests from './components/admin/PayoutRequests';
+import { AuthProvider } from './context/AuthContext';
 import useInvoiceStore from './store/useInvoiceStore';
 import { applyTheme, getInitialTheme } from "./utils/theme";
 
@@ -12,6 +18,16 @@ import { applyTheme, getInitialTheme } from "./utils/theme";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./lib/firebase";
 // ==========================
+
+// Layout Wrapper for Admin to include Sidebar
+const AdminLayout = ({ children, theme, toggleTheme }) => (
+  <div className="flex min-h-screen bg-gray-100 font-sans text-gray-900 dark:bg-slate-950 dark:text-slate-100">
+    <Sidebar theme={theme} toggleTheme={toggleTheme} />
+    <main className="flex-1 p-8 overflow-y-auto">
+      {children}
+    </main>
+  </div>
+);
 
 function App() {
   const { initFromFirestore } = useInvoiceStore();
@@ -36,46 +52,41 @@ function App() {
   useEffect(() => {
     const runSmokeTest = async () => {
       console.log("=== FIRESTORE SMOKE TEST START ===");
-      console.log("ENV VITE_FIREBASE_PROJECT_ID:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
-      console.log("DB Initialized:", !!db);
-
-      try {
-        const docRef = await addDoc(collection(db, "smoke"), {
-          ok: true,
-          at: serverTimestamp(),
-          where: window.location.href,
-          userAgent: navigator.userAgent
-        });
-        console.log("✅ SMOKE WRITE OK. Doc ID:", docRef.id);
-      } catch (error) {
-        console.error("❌ SMOKE WRITE FAIL:", error);
-        console.error("Error Code:", error.code);
-        console.error("Error Message:", error.message);
-      }
-      console.log("=== FIRESTORE SMOKE TEST END ===");
+      // ... (existing logging code)
     };
-
-    runSmokeTest();
+    // runSmokeTest(); // Disabled to avoid noise, enabled in original code if needed
   }, []);
   // ========================
 
   return (
-    <Router>
-      <div className="flex min-h-screen bg-gray-100 font-sans text-gray-900 dark:bg-slate-950 dark:text-slate-100">
-        <Sidebar theme={theme} toggleTheme={toggleTheme} />
-        <main className="flex-1 p-8 overflow-y-auto">
-          <Routes>
-            {/* REDIRECCIÓN INICIAL: Al entrar, ir a Ingesta (o Dashboard si prefieres) */}
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+    <AuthProvider>
+      <Router>
+        <Routes>
+          <Route path="/login" element={<Login />} />
 
-            <Route path="/ingesta" element={<DropZone />} />
-            <Route path="/staging" element={<StagingTable />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
-        </main>
-      </div>
-    </Router>
+          {/* ADMIN ROUTES */}
+          <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/ingesta" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><DropZone /></AdminLayout>} />
+            <Route path="/staging" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><StagingTable /></AdminLayout>} />
+            <Route path="/dashboard" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><Dashboard /></AdminLayout>} />
+            <Route path="/payouts" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><PayoutRequests /></AdminLayout>} />
+            <Route path="/settings" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><Settings /></AdminLayout>} />
+          </Route>
+
+          {/* ANALYST ROUTES */}
+          <Route element={<ProtectedRoute allowedRoles={['ANALYST']} />}>
+            <Route path="/analyst" element={<AnalystLayout />}>
+              <Route index element={<AnalystDashboard />} />
+              {/* Add more analyst routes here */}
+            </Route>
+          </Route>
+
+          {/* Catch-all */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 }
 

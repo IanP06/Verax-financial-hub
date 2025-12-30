@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { db } from '../lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, writeBatch, getDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, writeBatch, getDoc, query, where } from 'firebase/firestore';
 
 // Helper para parsear fechas DD/MM/AAAA a objeto Date JS
 const parseDate = (dateStr) => {
@@ -10,12 +10,69 @@ const parseDate = (dateStr) => {
     return new Date(year, month - 1, day);
 };
 
+// === MIRROR HELPERS ===
+// Función para sanear datos y sincronizar con la colección espejo del analista
+const syncInvoiceToAnalystMirror = async (invoiceData, invoiceId, analystProfiles) => {
+    if (!invoiceData.analyst || !analystProfiles) return;
+
+    // Buscar UID del analista basado en el nombre (analystKey debe coincidir con el nombre guardado en invoice.analyst)
+    // invoice.analyst ejemplo: "Ariel"
+    // analystProfiles ejemplo: [{ uid: "...", analystKey: "Ariel" }, ...]
+    // Normalizamos a mayúsculas para buscar
+    const targetAnalyst = analystProfiles.find(p => p.analystKey?.toUpperCase() === invoiceData.analyst.toUpperCase());
+
+    if (!targetAnalyst || !targetAnalyst.uid) {
+        console.warn(`[Mirror] No se encontró UID para analista: ${invoiceData.analyst}`);
+        return;
+    }
+
+    try {
+        const mirrorRef = doc(db, `analyst_invoices/${targetAnalyst.uid}/items`, invoiceId);
+
+        // Campos permitidos SOLO para el analista (Sanitized)
+        const safeData = {
+            invoiceNumber: invoiceData.nroFactura || "S/N",
+            claimNumber: invoiceData.nroSiniestro || "S/N",
+            insurer: invoiceData.aseguradora || "Desconocida",
+            issueDate: invoiceData.fecha || "", // String DD/MM/YYYY
+            // totalToLiquidate = gestion + ahorroAPagar + viaticos
+            totalToLiquidate: Number(invoiceData.totalAPagarAnalista || 0),
+            paymentStatus: invoiceData.estadoPago || "IMPAGO",
+            paymentDate: invoiceData.fechaPago || null, // Si ya se pagó
+            linkedPayoutRequestId: invoiceData.linkedPayoutRequestId || null,
+            updatedAt: new Date().toISOString()
+        };
+
+        // Usamos setDoc con merge: true para crear o actualizar
+        await setDoc(mirrorRef, safeData, { merge: true });
+        console.log(`[Mirror] Sincronizado OK para ${targetAnalyst.uid} (Factura ${invoiceId})`);
+    } catch (error) {
+        console.error(`[Mirror] Error sincronizando factura ${invoiceId}:`, error);
+    }
+};
+
+const deleteInvoiceFromAnalystMirror = async (invoiceId, analystName, analystProfiles) => {
+    if (!analystName || !analystProfiles) return;
+    const targetAnalyst = analystProfiles.find(p => p.analystKey?.toUpperCase() === analystName.toUpperCase());
+
+    if (targetAnalyst?.uid) {
+        try {
+            await deleteDoc(doc(db, `analyst_invoices/${targetAnalyst.uid}/items`, invoiceId));
+            console.log(`[Mirror] Eliminado espejo para ${targetAnalyst.uid} (Factura ${invoiceId})`);
+        } catch (error) {
+            console.error(`[Mirror] Error eliminando espejo ${invoiceId}:`, error);
+        }
+    }
+};
+// ======================
+
 const useInvoiceStore = create(
     persist(
         (set, get) => ({
             stagingInvoices: [],
             invoices: [],
             analysts: ['Ariel', 'Cesar', 'Daniel', 'Emiliano', 'Eugenia y Debora', 'Jazmin', 'Jeremias', 'Natalia', 'Pablo', 'Rodrigo', 'Sofia', 'Tomás'],
+            analystProfiles: [], // { uid, analystKey, role... }
             isHydrated: false,
             config: {
                 montoGestion: 20000,
@@ -41,17 +98,21 @@ const useInvoiceStore = create(
             initFromFirestore: async () => {
                 if (get().isHydrated) return;
                 try {
-                    // 1. Configurar
+                    // 1. Configurar Settings
                     const settingsRef = doc(db, 'settings', 'global');
                     const settingsSnap = await getDoc(settingsRef);
                     if (settingsSnap.exists()) {
                         set({ config: { ...get().config, ...settingsSnap.data() } });
                     } else {
-                        // Si no existe, crear con defaults (Seed inicial)
                         await setDoc(settingsRef, get().config);
                     }
 
-                    // 2. Facturas
+                    // 2. Cargar UserProfiles (Analyst Map)
+                    const profilesSnap = await getDocs(collection(db, 'userProfiles'));
+                    const profiles = profilesSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
+                    set({ analystProfiles: profiles });
+
+                    // 3. Facturas
                     const invoicesSnap = await getDocs(collection(db, 'invoices'));
                     const invoicesData = invoicesSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
                     set({ invoices: invoicesData, isHydrated: true });
@@ -93,9 +154,23 @@ const useInvoiceStore = create(
                 stagingInvoices: state.stagingInvoices.map((i) => {
                     if (i.id !== id) return i;
                     const updated = { ...i, [field]: value };
-                    if (['montoGestion', 'ahorroAPagar', 'viaticosAPagar', 'plusPorAhorro'].includes(field)) {
-                        updated.totalAPagarAnalista = Number(updated.montoGestion || 0) + Number(updated.ahorroAPagar || 0) + Number(updated.viaticosAPagar || 0);
+
+                    // Auto-calc Ahorro Amount if Percentage or Base values change
+                    if (['monto', 'montoGestion', 'plusPorAhorro'].includes(field)) {
+                        const amount = Number(updated.monto) || 0;
+                        const gestion = Number(updated.montoGestion) || 0;
+                        const pct = Number(updated.plusPorAhorro) || 0;
+
+                        // Only auto-calc if we have positive savings and a percentage is set
+                        if (amount > gestion && pct > 0) {
+                            const savings = amount - gestion;
+                            updated.ahorroAPagar = Math.round(savings * (pct / 100));
+                        }
                     }
+
+                    // Recalc Total
+                    updated.totalAPagarAnalista = Number(updated.montoGestion || 0) + Number(updated.ahorroAPagar || 0) + Number(updated.viaticosAPagar || 0);
+
                     return updated;
                 })
             })),
@@ -104,38 +179,39 @@ const useInvoiceStore = create(
             confirmInvoice: async (id) => {
                 const invoice = get().stagingInvoices.find((i) => i.id === id);
                 if (invoice) {
-                    // Quitar ID temporal
                     const { id: tempId, ...data } = invoice;
                     try {
-                        // Optimistic update
-                        const optimisticId = "temp_" + Date.now();
-                        set(state => ({
-                            stagingInvoices: state.stagingInvoices.filter(i => i.id !== id),
-                            // Temporalmente agregamos con ID falso mientras se confirma, o esperamos?
-                            // Mejor esperar confirmación para evitar desincronización de IDs, 
-                            // pero para UX rápido podríamos agregar. 
-                            // Vamos a esperar el await para tener el ID real de Firestore.
-                        }));
-
                         const docRef = await addDoc(collection(db, 'invoices'), data);
                         const newInvoice = { ...data, id: docRef.id };
 
                         set(state => ({
+                            stagingInvoices: state.stagingInvoices.filter(i => i.id !== id),
                             invoices: [...state.invoices, newInvoice]
                         }));
+
+                        // === MIRROR SYNC ===
+                        await syncInvoiceToAnalystMirror(newInvoice, newInvoice.id, get().analystProfiles);
+                        // ===================
 
                     } catch (e) {
                         console.error("Error al confirmar factura:", e);
                         alert("Error al guardar en Cloud.");
-                        // Rollback logic would go here (add back to staging)
                     }
                 }
             },
 
             deleteInvoice: async (id) => {
+                const invoiceToDelete = get().invoices.find(i => i.id === id);
                 try {
                     await deleteDoc(doc(db, 'invoices', id));
                     set((state) => ({ invoices: state.invoices.filter((i) => i.id !== id) }));
+
+                    // === MIRROR SYNC (DELETE) ===
+                    if (invoiceToDelete) {
+                        await deleteInvoiceFromAnalystMirror(id, invoiceToDelete.analyst, get().analystProfiles);
+                    }
+                    // ===================
+
                 } catch (e) {
                     console.error("Error borrando factura:", e);
                 }
@@ -143,7 +219,7 @@ const useInvoiceStore = create(
 
             // --- BULK CHARGE LOGIC (PHASE 2 - FIXES) ---
             previewBulkCobroByEmisor: async ({ emisorName, invoiceNumbers }) => {
-                const uniqueNumbers = [...new Set(invoiceNumbers)]; // Normalized strings "976", "977"
+                const uniqueNumbers = [...new Set(invoiceNumbers)];
                 if (uniqueNumbers.length === 0) return { toCharge: [], alreadyPaid: [], notFound: [], duplicated: [] };
 
                 const toCharge = [];
@@ -151,35 +227,18 @@ const useInvoiceStore = create(
                 const foundNumbers = new Set();
 
                 try {
-                    // NEW STRATEGY: Fetch all invoices for the Emisor, then filter in memory.
-                    // Ideally we'd use 'in' query on nroFactura, but without emisorCuit reliable, 
-                    // and since 'emisor' (Name) is indexed/simple, this is safer.
-                    // If Emisor has THOUSANDS of invoices, this might be heavy, but for this use case likely fine.
-                    // Alternative: Chunked 'in' queries on nroFactura directly + client filter by emisor.
-                    // Let's try Chunked 'in' query on nroFactura, AND client filter by Emisor.
-                    // This avoids downloading ALL emisor history if legal.
-                    // ACTUALLY: nroFactura is not unique across system, but high cardinality.
-                    // Let's stick to the prompt suggestion: "Primero traer dataset por emisor con query barata: query(invoicesRef, where('emisor','==', selectedEmisorId))"
-
                     const invoicesRef = collection(db, 'invoices');
                     const { query, where, getDocs } = await import('firebase/firestore');
-
-                    // Fetch by Emisor Name (ID)
                     const q = query(invoicesRef, where("emisor", "==", emisorName));
                     const snapshot = await getDocs(q);
 
                     snapshot.forEach(doc => {
                         const inv = { ...doc.data(), id: doc.id };
-                        // Normalize inv.nroFactura (just in case DB has zeros)
                         const dbNum = String(parseInt(inv.nroFactura, 10));
 
                         if (uniqueNumbers.includes(dbNum)) {
-                            foundNumbers.add(dbNum); // Track which inputs were found
-                            // Logic: If input "0976" matches "976", it's a match.
-
-                            // Check Status
+                            foundNumbers.add(dbNum);
                             if (inv.estadoDeCobro === 'COBRADO') {
-                                // Prevent duplicates in array if multiple DB docs match same number (unlikely per spec but possible)
                                 if (!alreadyPaid.some(x => x.id === inv.id)) alreadyPaid.push(inv);
                             } else {
                                 if (!toCharge.some(x => x.id === inv.id)) toCharge.push(inv);
@@ -189,23 +248,16 @@ const useInvoiceStore = create(
 
                 } catch (error) {
                     console.error("Error previewing bulk charge:", error);
-                    alert("Error consultando Firestore.");
                     return { toCharge: [], alreadyPaid: [], notFound: [], duplicated: [] };
                 }
 
-                // Determine Not Found
-                // We check which of uniqueNumbers were NOT in foundNumbers
-                // Note: uniqueNumbers are already normalized strings.
                 const notFound = uniqueNumbers.filter(num => !foundNumbers.has(num));
-
-                // Duplicate inputs check (visual only)
                 const duplicated = invoiceNumbers.filter((item, index) => invoiceNumbers.indexOf(item) !== index);
 
                 return { toCharge, alreadyPaid, notFound, duplicated: [...new Set(duplicated)] };
             },
 
             confirmBulkCobroByEmisor: async ({ docIds, fechaCobro }) => {
-                // Now accepts docIds directly to be safe and atomic based on preview
                 if (!docIds || docIds.length === 0) return { success: false, message: "No ids provided." };
 
                 const batchSize = 500;
@@ -233,7 +285,6 @@ const useInvoiceStore = create(
                 try {
                     await Promise.all(batches.map(b => b.commit()));
 
-                    // Update Local State
                     set(state => ({
                         invoices: state.invoices.map(inv => {
                             if (docIds.includes(inv.id)) {
@@ -268,12 +319,21 @@ const useInvoiceStore = create(
                 }
 
                 // Optimistic UI
+                const updatedInv = { ...inv, ...updates };
                 set(state => ({
-                    invoices: state.invoices.map(i => i.id === id ? { ...i, ...updates } : i)
+                    invoices: state.invoices.map(i => i.id === id ? updatedInv : i)
                 }));
 
                 try {
                     await updateDoc(doc(db, 'invoices', id), updates);
+
+                    // === MIRROR SYNC ===
+                    // Nota: estadoDeCobro cambia, pero NO mapeamos estadoDeCobro a analyst mirror (solo paymentStatus, no collection status)
+                    // El user prompt dice: "el analista NO debe poder ver... estado de cobro".
+                    // Asi que aqui NO hacemos sync de mirror, porque lo que cambió es info PRIVADA del Admin.
+                    // EXCEPTO que actualicemos updatedAt o algo
+                    // ===================
+
                 } catch (e) {
                     console.error("Error actualizando estado:", e);
                 }
@@ -281,15 +341,17 @@ const useInvoiceStore = create(
 
             // Edición General
             updateInvoice: async (id, newValues) => {
-                // Calc total locally
                 let derivedValues = {};
                 const current = get().invoices.find(i => i.id === id);
+                let finalUpdates = {};
+
                 if (current) {
                     const merged = { ...current, ...newValues };
                     derivedValues.totalAPagarAnalista = Number(merged.montoGestion || 0) + Number(merged.ahorroAPagar || 0) + Number(merged.viaticosAPagar || 0);
+                    finalUpdates = { ...newValues, ...derivedValues };
+                } else {
+                    finalUpdates = newValues;
                 }
-
-                const finalUpdates = { ...newValues, ...derivedValues };
 
                 set(state => ({
                     invoices: state.invoices.map(i => i.id === id ? { ...i, ...finalUpdates } : i)
@@ -297,6 +359,22 @@ const useInvoiceStore = create(
 
                 try {
                     await updateDoc(doc(db, 'invoices', id), finalUpdates);
+
+                    // === MIRROR SYNC (UPDATE) ===
+                    const updatedFull = { ...current, ...finalUpdates };
+
+                    // Check if analyst changed to move the mirror doc
+                    if (current && current.analyst !== updatedFull.analyst) {
+                        // Delete from old analyst
+                        await deleteInvoiceFromAnalystMirror(id, current.analyst, get().analystProfiles);
+                        // Create in new analyst
+                        await syncInvoiceToAnalystMirror(updatedFull, id, get().analystProfiles);
+                    } else {
+                        // Just update
+                        await syncInvoiceToAnalystMirror(updatedFull, id, get().analystProfiles);
+                    }
+                    // ===================
+
                 } catch (e) {
                     console.error("Error editando factura:", e);
                 }
@@ -307,7 +385,6 @@ const useInvoiceStore = create(
         }),
         {
             name: 'verax-storage',
-            // IMPORTANT: Only persist STAGING to localStorage. Everything else comes from DB.
             partialize: (state) => ({ stagingInvoices: state.stagingInvoices }),
         }
     )

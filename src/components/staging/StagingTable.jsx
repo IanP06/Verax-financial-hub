@@ -10,6 +10,25 @@ const StagingTable = () => {
         confirmInvoice(id);
     };
 
+    const handleAnalystChange = (id, newAnalyst) => {
+        updateStagingInvoice(id, 'analyst', newAnalyst); // Fix: store uses 'analyst' or 'analista'? Store init uses 'analista' in defaults but field in object is 'analista'? 
+        // NOTE: In store addStagingInvoice: "analista: inv.analista || ''".
+        // In updateStagingInvoice code: "const updated = { ...i, [field]: value };"
+        // Let's use 'analista' to match store.
+        updateStagingInvoice(id, 'analista', newAnalyst);
+
+        // Auto-set Savings % based on rules
+        const rule = config?.analystRules?.find(r => r.name === newAnalyst);
+        if (rule) {
+            updateStagingInvoice(id, 'plusPorAhorro', rule.pct);
+        }
+    };
+
+    const isRuleFixed = (analystName) => {
+        const rule = config?.analystRules?.find(r => r.name === analystName);
+        return rule?.mode === 'FIXED';
+    };
+
     return (
         <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-md mt-6 transition-colors">
             <h2 className="text-xl font-bold text-[#1d2e3f] dark:text-blue-200 mb-4">Staging Area</h2>
@@ -26,14 +45,7 @@ const StagingTable = () => {
 
                             {/* Liquidación */}
                             <th className="p-2 bg-blue-50 dark:bg-slate-800">GESTION A PAGAR</th>
-                            <th className="p-2 bg-blue-50 dark:bg-slate-800">Plus Ahorro</th>
-                            <th className="p-2 bg-blue-50 dark:bg-slate-800">AHORRO A PAGAR</th>
-                            <th className="p-2 bg-blue-50 dark:bg-slate-800">Viaticos</th>
-                            <th className="p-2 bg-blue-100 dark:bg-slate-700 font-bold">Total Analista</th>
-
-                            {/* Liquidación */}
-                            <th className="p-2 bg-blue-50 dark:bg-slate-800">GESTION A PAGAR</th>
-                            <th className="p-2 bg-blue-50 dark:bg-slate-800">Plus Ahorro</th>
+                            <th className="p-2 bg-blue-50 dark:bg-slate-800">Plus Ahorro (%)</th>
                             <th className="p-2 bg-blue-50 dark:bg-slate-800">AHORRO A PAGAR</th>
                             <th className="p-2 bg-blue-50 dark:bg-slate-800">Viaticos</th>
                             <th className="p-2 bg-blue-100 dark:bg-slate-700 font-bold">Total Analista</th>
@@ -43,7 +55,7 @@ const StagingTable = () => {
                     </thead>
                     <tbody>
                         {stagingInvoices.length === 0 ? (
-                            <tr><td colSpan="14" className="p-4 text-center text-gray-400">No hay facturas pendientes.</td></tr>
+                            <tr><td colSpan="10" className="p-4 text-center text-gray-400">No hay facturas pendientes.</td></tr>
                         ) : (
                             stagingInvoices.map((inv) => (
                                 <tr key={inv.id} className="border-b dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800 align-top transition-colors">
@@ -67,7 +79,6 @@ const StagingTable = () => {
                                             {config?.validAseguradoras?.map(a => (
                                                 <option key={a.nombre} value={a.nombre}>{a.nombre}</option>
                                             ))}
-                                            {/* Fallback if current value not in list */}
                                             {!config?.validAseguradoras?.some(a => a.nombre === inv.aseguradora) && inv.aseguradora && (
                                                 <option value={inv.aseguradora}>{inv.aseguradora}</option>
                                             )}
@@ -88,7 +99,7 @@ const StagingTable = () => {
                                     <td className="p-2">
                                         <select
                                             value={inv.analista || ''}
-                                            onChange={(e) => updateStagingInvoice(inv.id, 'analista', e.target.value)}
+                                            onChange={(e) => handleAnalystChange(inv.id, e.target.value)}
                                             className="border rounded p-1 w-24 bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                                         >
                                             <option value="">...</option>
@@ -103,7 +114,20 @@ const StagingTable = () => {
                                         <input type="number" value={inv.montoGestion} onChange={(e) => updateStagingInvoice(inv.id, 'montoGestion', e.target.value)} className="border rounded p-1 w-16 text-right dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
                                     </td>
                                     <td className="p-2 bg-blue-50 dark:bg-slate-800">
-                                        <input type="number" value={inv.plusPorAhorro} onChange={(e) => updateStagingInvoice(inv.id, 'plusPorAhorro', e.target.value)} className="border rounded p-1 w-16 text-right dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+                                        {/* PLUS AHORRO SMART */}
+                                        <div className="relative">
+                                            <input
+                                                type="number"
+                                                value={inv.plusPorAhorro}
+                                                onChange={(e) => updateStagingInvoice(inv.id, 'plusPorAhorro', e.target.value)}
+                                                disabled={isRuleFixed(inv.analista)}
+                                                className={`border rounded p-1 w-16 text-right dark:border-slate-600 dark:text-white 
+                                                    ${isRuleFixed(inv.analista) ? 'bg-gray-200 dark:bg-slate-600 text-gray-500' : 'bg-white dark:bg-slate-700'}`}
+                                            />
+                                            {isRuleFixed(inv.analista) && (
+                                                <span className="absolute top-0 right-0 -mt-2 -mr-1 text-[8px] bg-gray-200 px-1 rounded text-gray-500">FIX</span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="p-2 bg-blue-50 dark:bg-slate-800">
                                         <input type="number" value={inv.ahorroAPagar} onChange={(e) => updateStagingInvoice(inv.id, 'ahorroAPagar', e.target.value)} className="border rounded p-1 w-16 text-right dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
@@ -114,8 +138,6 @@ const StagingTable = () => {
                                     <td className="p-2 bg-blue-100 dark:bg-slate-700 font-bold text-right text-[#355071] dark:text-blue-200">
                                         ${inv.totalAPagarAnalista?.toLocaleString('es-AR') || 0}
                                     </td>
-
-                                    {/* Estado Cobro (Ex Estado) - Moved logic here implicitely by removing Resultado column block and validation below */}
 
                                     {/* Acciones */}
                                     <td className="p-2">
