@@ -70,8 +70,8 @@ const AnalystPayoutHistory = () => {
     }
 
     return (
-        <div className="space-y-4 mt-6">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Mis Solicitudes de Pago</h3>
+        <div className="space-y-4">
+            {/* Title managed by Sidebar container now */}
             {payoutRequests.map(req => {
                 const { color, label, icon: Icon } = getStatusConfig(req.status);
                 const dateStr = req.createdAt?.seconds ? new Date(req.createdAt.seconds * 1000).toLocaleDateString() : 'Pendiente';

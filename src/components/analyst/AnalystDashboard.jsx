@@ -36,13 +36,13 @@ import AnalystPayoutHistory from './AnalystPayoutHistory'; // Import New Compone
 
 const AnalystDashboard = () => {
     const { user, userProfile } = useAuth();
-    const { fetchAnalystData, analystInvoices, getStats } = useAnalystStore(); // Removed unused payoutRequests
+    const { fetchAnalystData, analystInvoices, getStats } = useAnalystStore();
     const [selectedIds, setSelectedIds] = useState([]);
     const [isCashoutModalOpen, setCashoutModalOpen] = useState(false);
+    const [isSidebarOpen, setSidebarOpen] = useState(true); // Default open on desktop
 
     useEffect(() => {
         if (user?.uid && userProfile?.analystKey) {
-            // Pass BOTH uid and analystKey
             fetchAnalystData(user.uid, userProfile.analystKey);
         }
     }, [user, userProfile, fetchAnalystData]);
@@ -58,61 +58,90 @@ const AnalystDashboard = () => {
     };
 
     return (
-        <div className="space-y-6">
-            {/* KPI Grid */}
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-                <StatCard
-                    title="Total Casos"
-                    value={stats.totalCases}
-                    icon={FileText}
-                    color="blue"
-                />
-                <StatCard
-                    title="Monto Histórico"
-                    value={`$${stats.totalAmount.toLocaleString('es-AR')}`}
-                    icon={BarChart}
-                    color="green"
-                />
-                <StatCard
-                    title="Disponible Pago"
-                    value={stats.readyCount}
-                    subtext="Casos > 40 días e Impagos"
-                    icon={CheckCircle}
-                    color="yellow"
-                />
-                <StatCard
-                    title="Monto Disponible"
-                    value={`$${stats.readyAmount.toLocaleString('es-AR')}`}
-                    icon={Wallet}
-                    color="green"
-                />
-            </div>
+        <div className="flex flex-col lg:flex-row gap-6 relative items-start">
+            {/* MAIN CONTENT */}
+            <div className="flex-1 w-full min-w-0 space-y-6">
 
-            {/* Actions Bar */}
-            <div className="flex justify-end items-center gap-4">
-                {stats.readyCount > 0 && (
-                    <div className="text-sm text-gray-600 dark:text-gray-300">
-                        {selectedIds.length} facturas seleccionadas
+                {/* Header Actions & Toggle */}
+                <div className="flex justify-between items-center">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Panel de Control</h2>
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => setSidebarOpen(!isSidebarOpen)}
+                            className="text-sm text-blue-600 hover:text-blue-800 font-medium underline"
+                        >
+                            {isSidebarOpen ? 'Ocultar Historial' : 'Ver Mis Solicitudes'}
+                        </button>
                     </div>
-                )}
-                <button
-                    onClick={handleOpenCashout}
-                    disabled={selectedIds.length === 0}
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                    <Wallet className="mr-2 h-4 w-4" />
-                    Solicitar Orden de Pago
-                </button>
+                </div>
+
+                {/* KPI Grid */}
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                    <StatCard
+                        title="Total Casos"
+                        value={stats.totalCases}
+                        icon={FileText}
+                        color="blue"
+                    />
+                    <StatCard
+                        title="Monto Histórico"
+                        value={`$${stats.totalAmount.toLocaleString('es-AR')}`}
+                        icon={BarChart}
+                        color="green"
+                    />
+                    <StatCard
+                        title="Disponible Pago"
+                        value={stats.readyCount}
+                        subtext="Casos > 40 días e Impagos"
+                        icon={CheckCircle}
+                        color="yellow"
+                    />
+                    <StatCard
+                        title="Monto Disponible"
+                        value={`$${stats.readyAmount.toLocaleString('es-AR')}`}
+                        icon={Wallet}
+                        color="green"
+                    />
+                </div>
+
+                {/* Actions Bar */}
+                <div className="flex justify-end items-center gap-4">
+                    {stats.readyCount > 0 && (
+                        <div className="text-sm text-gray-600 dark:text-gray-300">
+                            {selectedIds.length} facturas seleccionadas
+                        </div>
+                    )}
+                    <button
+                        onClick={handleOpenCashout}
+                        disabled={selectedIds.length === 0}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <Wallet className="mr-2 h-4 w-4" />
+                        Solicitar Orden de Pago
+                    </button>
+                </div>
+
+                {/* Main Table */}
+                <AnalystTable
+                    invoices={analystInvoices}
+                    onSelectionChange={setSelectedIds}
+                />
             </div>
 
-            {/* Main Table */}
-            <AnalystTable
-                invoices={analystInvoices}
-                onSelectionChange={setSelectedIds}
-            />
-
-            {/* Full History Section */}
-            <AnalystPayoutHistory />
+            {/* SIDEBAR */}
+            {isSidebarOpen && (
+                <div className="lg:w-[400px] w-full flex-shrink-0 lg:sticky lg:top-24 h-fit">
+                    <div className="bg-white dark:bg-slate-800 shadow rounded-lg p-4 border border-gray-200 dark:border-slate-700 max-h-[calc(100vh-100px)] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Mis Solicitudes</h3>
+                            <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-gray-500">
+                                Cerrar
+                            </button>
+                        </div>
+                        <AnalystPayoutHistory />
+                    </div>
+                </div>
+            )}
 
             {/* Modal */}
             {isCashoutModalOpen && (
