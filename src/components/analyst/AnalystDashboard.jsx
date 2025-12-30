@@ -113,7 +113,15 @@ const AnalystDashboard = () => {
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Solicitudes Recientes</h3>
                 <div className="bg-white dark:bg-slate-800 shadow rounded-lg overflow-hidden">
                     <ul className="divide-y divide-gray-200 dark:divide-slate-700">
-                        {payoutRequests.length === 0 ? (
+                        {/* Error State for Missing Index */}
+                        {useAnalystStore.getState().requestsError === 'missing-index' && (
+                            <li className="p-4 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 text-sm">
+                                ⚠️ No se pudieron cargar las solicitudes recientes (falta índice en base de datos).
+                                Sus facturas están visibles arriba. Contacte al administrador.
+                            </li>
+                        )}
+
+                        {payoutRequests.length === 0 && !useAnalystStore.getState().requestsError ? (
                             <li className="p-4 text-sm text-gray-500">No hay solicitudes recientes.</li>
                         ) : (
                             payoutRequests.map(req => (

@@ -9,6 +9,8 @@ const useAnalystStore = create((set, get) => ({
     loading: false,
     error: null,
 
+    requestsError: null, // New state for index errors
+
     // KPI Helper Getters (computed)
     getStats: () => {
         const invoices = get().analystInvoices;
@@ -48,71 +50,77 @@ const useAnalystStore = create((set, get) => ({
         return { totalCases, totalAmount, readyCount, readyAmount, readyInvoices };
     },
 
-    fetchAnalystData: async (uid, analystKey) => {
-        if (!uid) return;
-        set({ loading: true, error: null });
-        console.log(`[Store] Fetching for UID: ${uid}, Key: ${analystKey}`);
-
-        // Normalize identifying key
+    // INTERNAL: Fetch Invoices
+    fetchInvoicesForAnalyst: async (analystKey) => {
+        console.log(`[Store] Fetching Invoices for Key: ${analystKey}`);
         const me = normalizeName(analystKey);
-        if (!me) {
-            console.warn("[Store] No valid analystKey to fetch.");
-            set({ analystInvoices: [], loading: false });
-            return;
+
+        const results = new Map(); // Use Map to dedupe by ID
+
+        // Query A: Legacy 'analista'
+        const qLegacy = query(collection(db, 'invoices'), where('analista', '==', analystKey));
+        const snapLegacy = await getDocs(qLegacy);
+        snapLegacy.forEach(doc => results.set(doc.id, { ...doc.data(), id: doc.id }));
+
+        // Query B: Future 'analyst'
+        const qFuture = query(collection(db, 'invoices'), where('analyst', '==', analystKey));
+        try {
+            const snapFuture = await getDocs(qFuture);
+            snapFuture.forEach(doc => results.set(doc.id, { ...doc.data(), id: doc.id }));
+        } catch (e) {
+            // Ignore
         }
 
+        // Convert to array
+        let allDocs = Array.from(results.values());
+
+        // 3. Client-side Safe Filtering (Normalization)
+        allDocs = allDocs.filter(doc => {
+            const docName = normalizeName(doc.analista || doc.analyst);
+            return docName === me;
+        });
+
+        console.log(`[Store] Invoices In-Memory: ${allDocs.length}`);
+        set({ analystInvoices: allDocs });
+    },
+
+    // INTERNAL: Fetch Requests (Can fail due to index)
+    fetchPayoutRequestsForAnalyst: async (uid) => {
+        console.log(`[Store] Fetching PayoutRequests for UID: ${uid}`);
         try {
-            const results = new Map(); // Use Map to dedupe by ID
-
-            // Query A: Legacy 'analista'
-            const qLegacy = query(collection(db, 'invoices'), where('analista', '==', analystKey)); // Try exact match first (case-sensitive DB)
-            // Note: Firestore is case sensitive. If DB has "Rodrigo" and key is "Rodrigo", it works.
-            // If DB has "rodrigo", it fails.
-            // We assume the stored analystKey matches the DB casing usually (from Admin dropdown).
-            // But prompt says "Filtro defensivo... robusto a mayúsculas".
-            // Since we can't do case-insensitive WHERE in Firestore without a separate index field,
-            // we rely on the primary query matching. If the Admin selected "Rodrigo" from a list, it should match.
-            // If manual entry, we might miss it.
-            // Improvement: If we suspect casing mismatch, we could try querying by 'analista' == analystKey AND 'analyst' == analystKey.
-            // But for now, we follow instructions: "Query primaria... invoices where analista == profile.analystKey"
-
-            const snapLegacy = await getDocs(qLegacy);
-            snapLegacy.forEach(doc => results.set(doc.id, { ...doc.data(), id: doc.id }));
-
-            // Query B: Future 'analyst'
-            const qFuture = query(collection(db, 'invoices'), where('analyst', '==', analystKey));
-            try {
-                const snapFuture = await getDocs(qFuture);
-                snapFuture.forEach(doc => results.set(doc.id, { ...doc.data(), id: doc.id }));
-            } catch (e) {
-                // Ignore missing field errors implies query B might be empty or invalid if index missing?
-                // Actually simple equality queries don't need composite indexes.
-            }
-
-            // Convert to array
-            let allDocs = Array.from(results.values());
-
-            // 3. Client-side Safe Filtering (Normalization)
-            // Filter defensive: keep only if normalized(doc.analista) === me
-            allDocs = allDocs.filter(doc => {
-                const docName = normalizeName(doc.analista || doc.analyst);
-                return docName === me;
-            });
-
-            console.log(`[Store] Invoices found for ${analystKey} (normalized: ${me}): ${allDocs.length}`);
-            if (import.meta.env.DEV && allDocs.length > 0) {
-                console.log("Sample Invoice:", allDocs[0]);
-            }
-
-            // 2. Fetch Payout Requests
+            set({ requestsError: null });
             const requestsRef = collection(db, 'payoutRequests');
             const qReq = query(requestsRef, where('analystUid', '==', uid), orderBy('createdAt', 'desc'));
             const reqSnap = await getDocs(qReq);
             const requests = reqSnap.docs.map(d => ({ ...d.data(), id: d.id }));
-
-            set({ analystInvoices: allDocs, payoutRequests: requests, loading: false });
+            set({ payoutRequests: requests });
         } catch (err) {
-            console.error("Error fetching analyst data:", err);
+            console.warn("[Store] PayoutRequests fetch failed (likely index issue):", err);
+            // If failed-precondition, it means missing index.
+            if (err.code === 'failed-precondition' || err.message.includes('index')) {
+                set({ requestsError: 'missing-index', payoutRequests: [] });
+            } else {
+                set({ requestsError: 'generic', payoutRequests: [] });
+            }
+        }
+    },
+
+    fetchAnalystData: async (uid, analystKey) => {
+        if (!uid || !analystKey) {
+            console.warn("[Store] Skipping fetchAnalystData (missing uid or key)");
+            return;
+        }
+
+        set({ loading: true, error: null });
+
+        try {
+            // Run independently. Invoices are critical. Requests are secondary.
+            await get().fetchInvoicesForAnalyst(analystKey);
+            await get().fetchPayoutRequestsForAnalyst(uid);
+
+            set({ loading: false });
+        } catch (err) {
+            console.error("Critical Error fetching analyst data:", err);
             set({ error: err.message, loading: false });
         }
     },
