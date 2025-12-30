@@ -5,7 +5,16 @@ import { useAuth } from '../../context/AuthContext';
 
 const Sidebar = ({ theme, toggleTheme }) => {
     const { logout, userProfile } = useAuth();
-    const isAdmin = userProfile?.role === 'ADMIN';
+
+    // Config: Normalize role for safety
+    const role = userProfile?.role?.toLowerCase() || '';
+    const isAdmin = role === 'admin';
+    const isAnalyst = role === 'analyst';
+
+    // DEBUG LOG (Requested by User)
+    // React.useEffect(() => {
+    //    console.log('[Nav] role=', role, 'isAdmin=', isAdmin);
+    // }, [role, isAdmin]);
 
     const linkClasses = ({ isActive }) =>
         `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
@@ -17,15 +26,19 @@ const Sidebar = ({ theme, toggleTheme }) => {
         <div className="w-64 bg-[#0f172a] min-h-screen flex flex-col text-white flex-shrink-0 z-50">
             {/* Header */}
             <div className="p-6 border-b border-gray-700">
-                <h1 className="text-xl font-bold text-white tracking-wide">Verax Financial Hub</h1>
-                <p className="text-xs text-gray-400 mt-1">Gestión Financiera</p>
+                <h1 className="text-xl font-bold text-white tracking-wide">Verax Hub</h1>
+                <p className="text-xs text-gray-400 mt-1">
+                    {isAdmin ? 'Admin Portal' : 'Analyst Portal'}
+                </p>
             </div>
 
             {/* Navegación Principal */}
             <nav className="flex-1 p-4 space-y-2">
-                {isAdmin ? (
+                {isAdmin && (
                     <>
-                        {/* ADMIN LINKS */}
+                        <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            Administración
+                        </div>
                         <NavLink to="/ingesta" className={linkClasses}>
                             <UploadCloud size={20} />
                             <span className="font-medium">Ingesta & OCR</span>
@@ -46,9 +59,13 @@ const Sidebar = ({ theme, toggleTheme }) => {
                             <span className="font-medium">Solicitudes Pago</span>
                         </NavLink>
                     </>
-                ) : (
+                )}
+
+                {isAnalyst && (
                     <>
-                        {/* ANALYST LINKS */}
+                        <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            Analista
+                        </div>
                         <NavLink to="/analyst" end className={linkClasses}>
                             <LayoutDashboard size={20} />
                             <span className="font-medium">Dashboard</span>
