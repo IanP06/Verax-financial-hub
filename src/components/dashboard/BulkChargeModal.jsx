@@ -49,25 +49,32 @@ const BulkChargeModal = ({ onClose }) => {
 
     const handleConfirm = async () => {
         if (!previewData || previewData.toCharge.length === 0) return;
+        if (!fechaCobro) return alert("Fecha de cobro inválida.");
 
         if (!window.confirm(`¿Confirmás marcar como COBRADAS ${previewData.toCharge.length} facturas del emisor ${selectedEmisorName} con fecha ${fechaCobro}?`)) {
             return;
         }
 
         setLoading(true);
-        // Only valid ones
-        const ids = previewData.toCharge.map(i => i.id);
-        const res = await confirmBulkCobroByEmisor({
-            docIds: ids, // Pass IDs directly to be safe
-            fechaCobro
-        });
+        try {
+            // Only valid ones
+            const ids = previewData.toCharge.map(i => i.id);
+            const res = await confirmBulkCobroByEmisor({
+                docIds: ids, // Pass IDs directly to be safe
+                fechaCobro
+            });
 
-        setLoading(false);
-        if (res.success) {
-            alert(`Éxito: Se actualizaron ${res.count} facturas.`);
-            onClose();
-        } else {
-            alert(`Error: ${res.message}`);
+            if (res.success) {
+                alert(`Éxito: Se actualizaron ${res.count} facturas.`);
+                onClose();
+            } else {
+                alert(`Error: ${res.message}`);
+            }
+        } catch (error) {
+            console.error("Crash prevented in Modal:", error);
+            alert("Ocurrió un error inesperado al procesar el cobro.");
+        } finally {
+            setLoading(false);
         }
     };
 

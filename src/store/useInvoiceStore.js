@@ -340,12 +340,37 @@ const useInvoiceStore = create(
                 let currentBatch = writeBatch(db);
                 let count = 0;
 
-                // Parse fechaCobro string (DD/MM/YYYY) to Date
+                // Robust Date Parsing
                 let fechaCobroTimestamp = null;
-                if (fechaCobro) {
-                    const [d, m, y] = fechaCobro.split('/');
-                    const dateObj = new Date(y, m - 1, d); // Local zone implicit
-                    fechaCobroTimestamp = Timestamp.fromDate(dateObj);
+                try {
+                    if (fechaCobro) {
+                        if (fechaCobro instanceof Date && !isNaN(fechaCobro)) {
+                            fechaCobroTimestamp = Timestamp.fromDate(fechaCobro);
+                        } else if (typeof fechaCobro === 'string') {
+                            if (fechaCobro.includes('-')) {
+                                // Assume YYYY-MM-DD (from input type="date")
+                                const [y, m, d] = fechaCobro.split('-');
+                                const dateObj = new Date(y, m - 1, d);
+                                if (!isNaN(dateObj.getTime())) {
+                                    fechaCobroTimestamp = Timestamp.fromDate(dateObj);
+                                }
+                            } else if (fechaCobro.includes('/')) {
+                                // Assume DD/MM/YYYY
+                                const [d, m, y] = fechaCobro.split('/');
+                                const dateObj = new Date(y, m - 1, d);
+                                if (!isNaN(dateObj.getTime())) {
+                                    fechaCobroTimestamp = Timestamp.fromDate(dateObj);
+                                }
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error("Date parse error:", err);
+                    // Don't throw, just let it be null or handle gracefully
+                }
+
+                if (!fechaCobroTimestamp) {
+                    return { success: false, message: "Fecha de cobro inválida o formato desconocido." };
                 }
 
                 docIds.forEach(id => {
