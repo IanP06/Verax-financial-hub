@@ -30,7 +30,12 @@ const Dashboard = () => {
     const totalLiquidado = filteredInvoices.reduce((acc, curr) => acc + (curr.totalAPagarAnalista || 0), 0);
 
     const cobrados = filteredInvoices.filter(i => (i.estadoDeCobro || 'NO COBRADO') === 'COBRADO');
-    const tasaCobro = filteredInvoices.length > 0 ? ((cobrados.length / filteredInvoices.length) * 100).toFixed(0) : 0;
+    const totalCobrado = cobrados.reduce((acc, curr) => acc + parseMonto(curr.monto), 0);
+    // Tasa based on Amount usually makes more sense for "Financial Hub", but user said (totalCobrado / totalFacturado * 100).
+    // Prompt: "Tasa (%) = totalCobrado / totalFacturado * 100"
+    // Previous code was using count: (cobrados.length / filteredInvoices.length).
+    // I will switch to Amount-based percentage as per Prompt instructions ("Reglas de cálculo... Total facturado ($Y)... Total cobrado ($X)... Tasa = X/Y").
+    const tasaCobro = totalFacturado > 0 ? ((totalCobrado / totalFacturado) * 100).toFixed(1) : 0;
 
     const diasSum = cobrados.reduce((acc, curr) => {
         const start = parseDateStr(curr.fecha);
@@ -98,6 +103,9 @@ const Dashboard = () => {
                 <div className="bg-white dark:bg-slate-900 dark:border dark:border-slate-700 p-4 rounded shadow border-l-4 border-green-600 dark:border-l-green-400">
                     <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Tasa de Cobro</p>
                     <p className="text-2xl font-bold text-green-700 dark:text-green-300">{tasaCobro}%</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        ${totalCobrado.toLocaleString('es-AR')} cobrados
+                    </p>
                 </div>
                 <div className="bg-white dark:bg-slate-900 dark:border dark:border-slate-700 p-4 rounded shadow border-l-4 border-orange-500 dark:border-l-orange-400">
                     <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Promedio Días Cobro</p>

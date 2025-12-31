@@ -26,7 +26,7 @@ const Sidebar = ({ theme, toggleTheme }) => {
         <div className="w-64 bg-[#0f172a] min-h-screen flex flex-col text-white flex-shrink-0 z-50">
             {/* Header */}
             <div className="p-6 border-b border-gray-700">
-                <h1 className="text-xl font-bold text-white tracking-wide">Verax Hub</h1>
+                <h1 className="text-xl font-bold text-white tracking-wide">Verax Financial Hub</h1>
                 <p className="text-xs text-gray-400 mt-1">
                     {isAdmin ? 'Admin Portal' : 'Analyst Portal'}
                 </p>
