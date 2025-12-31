@@ -2,11 +2,16 @@ import React, { useState } from 'react';
 import useInvoiceStore from '../../store/useInvoiceStore';
 import MasterTable from './MasterTable'; // IMPORTANTE: Importar la tabla
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { FileText } from 'lucide-react';
+
+// Lazy load helper to avoid bloat if not used often
+const LiquidationListHelper = React.lazy(() => import('./LiquidationListHelper'));
 
 const Dashboard = () => {
     const { invoices, config } = useInvoiceStore();
     const [dateRange, setDateRange] = useState({ from: '', to: '' });
     const [selectedCia, setSelectedCia] = useState('');
+    const [showLiquidationHistory, setShowLiquidationHistory] = useState(false); // [NEW] State
 
     const parseDateStr = (dateStr) => {
         if (!dateStr) return new Date();
@@ -75,7 +80,15 @@ const Dashboard = () => {
         <div className="p-6 space-y-8">
             {/* Header y Filtro Dashboard */}
             <div className="flex justify-between items-end">
-                <h1 className="text-2xl font-bold text-[#355071] dark:text-blue-300">Dashboard Financiero</h1>
+                <div className="flex items-center gap-4">
+                    <h1 className="text-2xl font-bold text-[#355071] dark:text-blue-300">Dashboard Financiero</h1>
+                    <button
+                        onClick={() => setShowLiquidationHistory(true)}
+                        className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full hover:bg-indigo-100 border border-indigo-200 font-bold flex items-center gap-1"
+                    >
+                        <FileText size={12} /> Ver Órdenes SANCOR
+                    </button>
+                </div>
                 <div className="flex gap-2">
                     <select
                         className="border p-2 rounded text-sm w-40 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
@@ -141,6 +154,13 @@ const Dashboard = () => {
             <div className="border-t pt-8 dark:border-slate-700">
                 <MasterTable />
             </div>
+
+            {/* Modal de Historial Liquidaciones */}
+            {showLiquidationHistory && (
+                <React.Suspense fallback={null}>
+                    <LiquidationListHelper onClose={() => setShowLiquidationHistory(false)} />
+                </React.Suspense>
+            )}
         </div>
     );
 };

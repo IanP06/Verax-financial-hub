@@ -240,7 +240,7 @@ const AnalystTable = ({ invoices, onSelectionChange }) => {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
                                 {/* Header Checkbox could go here but button handles bulk */}
                             </th>
-                            <ThSortable label="N° Factura" column="factura" />
+                            <ThSortable label="Factura / Orden" column="factura" />
                             <ThSortable label="Siniestro" column="siniestro" />
                             <ThSortable label="Compañía" column="compania" />
                             <ThSortable label="Fecha Emisión" column="fechaEmision" />

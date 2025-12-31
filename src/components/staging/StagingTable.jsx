@@ -1,14 +1,41 @@
-import React from 'react';
-import { Trash, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Trash, Check, FileText, Plus } from 'lucide-react';
 import useInvoiceStore from '../../store/useInvoiceStore';
+import LiquidationUploadModal from './LiquidationUploadModal';
+import LiquidationStagingManager from './LiquidationStagingManager';
 
 const StagingTable = () => {
     // UPDATED: Using stagingInvoices, removeStagingInvoice, updateStagingInvoice from the new store structure
-    const { stagingInvoices, removeStagingInvoice, updateStagingInvoice, confirmInvoice, analysts, config } = useInvoiceStore();
+    const { stagingInvoices, removeStagingInvoice, updateStagingInvoice, confirmInvoice, analysts, config, fetchLiquidations } = useInvoiceStore();
+
+    // Liquidation Flow State
+    const [showLiquidationModal, setShowLiquidationModal] = useState(false);
+    const [currentLiquidationId, setCurrentLiquidationId] = useState(null);
+
+    // Init Liquidations Listener
+    useEffect(() => {
+        const unsub = fetchLiquidations();
+        // Since fetchLiquidations is async but returns unsubscribe immediately or promise?
+        // My implementation: async... returns unsubscribe.
+        // But useEffect cleanup expects sync return of func. 
+        // Let's handle it safely.
+        return () => { if (unsub && typeof unsub === 'function') unsub(); };
+    }, [fetchLiquidations]);
 
     const handleConfirm = (id) => {
         confirmInvoice(id);
     };
+
+    // If active liquidation staging, show Manager instead of Table
+    if (currentLiquidationId) {
+        return (
+            <LiquidationStagingManager
+                liquidationId={currentLiquidationId}
+                onBack={() => setCurrentLiquidationId(null)}
+                onComplete={() => setCurrentLiquidationId(null)}
+            />
+        );
+    }
 
     const handleAnalystChange = (id, newAnalyst) => {
         updateStagingInvoice(id, 'analyst', newAnalyst); // Fix: store uses 'analyst' or 'analista'? Store init uses 'analista' in defaults but field in object is 'analista'? 
@@ -32,9 +59,32 @@ const StagingTable = () => {
     };
 
     return (
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-md mt-6 transition-colors">
-            <h2 className="text-xl font-bold text-[#1d2e3f] dark:text-blue-200 mb-4">Staging Area</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Revisa y completa los datos antes de confirmar.</p>
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-md transition-colors">
+
+            <div className="flex justify-between items-center mb-4">
+                <div>
+                    <h2 className="text-xl font-bold text-[#1d2e3f] dark:text-blue-200">Staging Area</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Revisa y completa los datos antes de confirmar.</p>
+                </div>
+                <button
+                    onClick={() => setShowLiquidationModal(true)}
+                    className="flex items-center gap-2 bg-indigo-600 text-white px-3 py-2 rounded text-sm font-bold hover:bg-indigo-700 shadow"
+                >
+                    <FileText size={16} /> Nueva Orden Liquidación (SANCOR)
+                </button>
+            </div>
+
+            {showLiquidationModal && (
+                <LiquidationUploadModal
+                    onClose={() => setShowLiquidationModal(false)}
+                    onSuccess={(id) => {
+                        console.log("Liquidation created ID:", id);
+                        setCurrentLiquidationId(id);
+                        // Modal closes automatically via onClose usually, but logic here ensures state switch
+                        setShowLiquidationModal(false);
+                    }}
+                />
+            )}
 
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">

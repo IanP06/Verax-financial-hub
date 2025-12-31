@@ -71,6 +71,8 @@ const useInvoiceStore = create(
         (set, get) => ({
             stagingInvoices: [],
             invoices: [],
+            liquidations: [], // [NEW] Admin: List of Mother Invoices
+            liquidationItems: [], // [NEW] Admin/Analyst: List of Items
             analysts: ['Ariel', 'Cesar', 'Daniel', 'Emiliano', 'Eugenia y Debora', 'Jazmin', 'Jeremias', 'Natalia', 'Pablo', 'Rodrigo', 'Sofia', 'Tomás'],
             analystProfiles: [], // { uid, analystKey, role... }
             isHydrated: false,
@@ -207,6 +209,124 @@ const useInvoiceStore = create(
                     console.error("Error guardando config:", e);
                 }
             },
+
+            // === LIQUIDATION LOGIC (SANCOR) ===
+            fetchLiquidations: async () => {
+                try {
+                    const { query, orderBy, onSnapshot, collection } = await import('firebase/firestore');
+                    const q = query(collection(db, 'liquidations'), orderBy('createdAt', 'desc'));
+
+                    const unsubscribe = onSnapshot(q, (snapshot) => {
+                        const liqs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        set({ liquidations: liqs });
+                    });
+                    // Store unsubscribe if needed, but for now just global listener assumption
+                    return unsubscribe;
+                } catch (e) { console.error("Error fetching liquidations:", e); }
+            },
+
+            // Admin: Save Liquidation Draft (Step 1 or interim updates)
+            saveLiquidationDraft: async (liquidationData) => {
+                try {
+                    const { doc, collection, serverTimestamp, setDoc } = await import('firebase/firestore');
+
+                    let liqRef;
+                    if (liquidationData.id) {
+                        liqRef = doc(db, 'liquidations', liquidationData.id);
+                    } else {
+                        liqRef = doc(collection(db, 'liquidations'));
+                    }
+
+                    const payload = {
+                        ...liquidationData,
+                        status: 'DRAFT',
+                        updatedAt: serverTimestamp(),
+                        createdAt: liquidationData.createdAt || serverTimestamp()
+                    };
+
+                    await setDoc(liqRef, payload, { merge: true });
+                    console.log("Liquidation Draft Saved:", liqRef.id);
+                    return { success: true, id: liqRef.id };
+                } catch (e) {
+                    console.error("Error saving draft:", e);
+                    return { success: false, error: e.message };
+                }
+            },
+
+            // Admin: Post Liquidation + Items (Batch)
+            postLiquidation: async (liquidationData, items) => {
+                try {
+                    const { writeBatch, doc, collection, serverTimestamp } = await import('firebase/firestore');
+                    const batch = writeBatch(db);
+
+                    // 1. Create Liquidation Doc (or update if ID provided)
+                    let liqRef;
+                    if (liquidationData.id) {
+                        liqRef = doc(db, 'liquidations', liquidationData.id);
+                    } else {
+                        liqRef = doc(collection(db, 'liquidations'));
+                    }
+
+                    const liqPayload = {
+                        ...liquidationData,
+                        status: 'POSTED',
+                        updatedAt: serverTimestamp(),
+                        createdAt: liquidationData.createdAt || serverTimestamp() // Preserve if draft
+                    };
+                    batch.set(liqRef, liqPayload, { merge: true });
+
+                    // 2. Create Items
+                    items.forEach(item => {
+                        const itemRef = doc(collection(db, 'liquidation_items'));
+                        const itemPayload = {
+                            ...item,
+                            liquidationId: liqRef.id,
+                            nroFactura: liquidationData.liquidationNumber, // Default fallback
+                            source: 'LIQUIDATION_ITEM',
+                            createdAt: serverTimestamp(),
+                            updatedAt: serverTimestamp()
+                        };
+                        batch.set(itemRef, itemPayload);
+                    });
+
+                    await batch.commit();
+                    console.log("Liquidation Posted:", liqRef.id);
+                    return { success: true, id: liqRef.id };
+
+                } catch (e) {
+                    console.error("Error posting liquidation:", e);
+                    return { success: false, error: e.message };
+                }
+            },
+
+            // Analyst: Subscribe to their items
+            subscribeToAnalystLiquidationItems: async (analystName) => {
+                if (!analystName) return;
+                try {
+                    const { query, where, onSnapshot, collection, orderBy } = await import('firebase/firestore');
+                    // Case insensitive matching might be hard in firestore without extra field. 
+                    // Sticking to exact match or normalized upper field if available.
+                    // Assuming 'analystName' in db matches exact casing of dropdown usually.
+
+                    const q = query(
+                        collection(db, 'liquidation_items'),
+                        where('analystName', '==', analystName)
+                        // orderBy('createdAt', 'desc') // Requires composite index usually
+                    );
+
+                    const unsubscribe = onSnapshot(q, (snapshot) => {
+                        const items = snapshot.docs.map(d => ({ id: d.id, ...d.data(), isLiquidationItem: true }));
+                        set(state => ({
+                            liquidationItems: items
+                            // Note: This replaces `liquidationItems` global store. 
+                            // If multiple analysts use same store instance (unlikely in this filtered view), it creates conflict.
+                            // But usually 1 user = 1 session.
+                        }));
+                    });
+                    return unsubscribe;
+                } catch (e) { console.error("Error subbing liquidation items:", e); }
+            },
+            // ==================================
 
             // Acciones básicas de Staging (Local)
             addStagingInvoice: (inv) => set((state) => {

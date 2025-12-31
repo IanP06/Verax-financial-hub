@@ -131,18 +131,40 @@ const useAnalystStore = create((set, get) => ({
 
         const me = normalizeName(analystKey);
 
-        // --- 1. SETUP INVOICE LISTENERS (Dual Query Strategy) ---
+        // --- 1. SETUP INVOICE LISTENERS (Dual Query Strategy + Liquidations) ---
         let legacyDocs = [];
         let futureDocs = [];
+        let liquidationDocs = []; // [NEW] Sancor Liquidations
 
         const mergeAndSetInvoices = () => {
             const results = new Map();
             legacyDocs.forEach(d => results.set(d.id, d));
             futureDocs.forEach(d => results.set(d.id, d));
 
+            // Merge Liquidations
+            // Note: Liquidation Items have 'liquidationId' but we use their doc 'id' as key
+            liquidationDocs.forEach(d => {
+                // Map/Normalize fields if necessary to match Invoice schema for Table
+                // liquidation_items schema matches requirements mostly
+                // source: "LIQUIDATION_ITEM" logic handle in UI if needed
+                results.set(d.id, {
+                    ...d,
+                    isLiquidation: true,
+                    // Map 'nroFactura' which is Mother Invoice Number
+                    // Map 'monto' ?
+                    monto: d.montoFactura,
+                    fecha: d.fechaEmision, // string YYYY-MM-DD usually from our Staging
+                    // Ensure ID is set
+                    id: d.id
+                });
+            });
+
             let allDocs = Array.from(results.values());
-            // Client-side Safe Filter
-            allDocs = allDocs.filter(d => normalizeName(d.analista || d.analyst) === me);
+            // Client-side Safe Filter (already mostly filtered by query but safe check)
+            allDocs = allDocs.filter(d => {
+                const docName = normalizeName(d.analista || d.analyst || d.analystName);
+                return docName === me;
+            });
 
             set({ analystInvoices: allDocs });
         };
@@ -150,6 +172,7 @@ const useAnalystStore = create((set, get) => ({
         // Queries
         let unsubLegacy = () => { };
         let unsubFuture = () => { };
+        let unsubLiquidations = () => { }; // [NEW]
         let unsubRequests = () => { };
 
         try {
@@ -166,6 +189,14 @@ const useAnalystStore = create((set, get) => ({
                 futureDocs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
                 mergeAndSetInvoices();
             }, (error) => console.warn("Future Invoice Listener Error", error));
+
+            // Query C: Liquidations (SANCOR)
+            // Query by 'analystName' (String)
+            const qLiq = query(collection(db, 'liquidation_items'), where('analystName', '==', analystKey));
+            unsubLiquidations = onSnapshot(qLiq, (snap) => {
+                liquidationDocs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+                mergeAndSetInvoices();
+            }, (error) => console.warn("Liquidation Listener Error", error));
 
             // --- 2. SETUP REQUESTS LISTENER ---
             const requestsRef = collection(db, 'payoutRequests');
@@ -201,6 +232,7 @@ const useAnalystStore = create((set, get) => ({
             console.log("[Store] Unsubscribing observers...");
             if (unsubLegacy) unsubLegacy();
             if (unsubFuture) unsubFuture();
+            if (unsubLiquidations) unsubLiquidations();
             if (unsubRequests) unsubRequests();
         };
     },
