@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
-import { Upload, X, FileText, Loader } from 'lucide-react';
+import { Upload, X, FileText, Loader, AlertCircle } from 'lucide-react';
 import useInvoiceStore from '../../store/useInvoiceStore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { uploadLiquidationPdf } from '../../utils/storageHelpers';
 
 const LiquidationUploadModal = ({ onClose, onSuccess }) => {
     const { saveLiquidationDraft } = useInvoiceStore();
@@ -22,6 +22,7 @@ const LiquidationUploadModal = ({ onClose, onSuccess }) => {
     };
 
     const handleUpload = async () => {
+        // Validation handled partly by helper, but good to check existence here too
         if (!file) return setError("Seleccione un archivo PDF");
         if (!liquidationNumber) return setError("Ingrese el Número de Liquidación");
 
@@ -29,12 +30,11 @@ const LiquidationUploadModal = ({ onClose, onSuccess }) => {
         setError(null);
 
         try {
-            // 1. Upload PDF
-            const storage = getStorage();
-            const storagePath = `liquidations/${Date.now()}_${file.name}`;
-            const storageRef = ref(storage, storagePath);
-            await uploadBytes(storageRef, file);
-            const downloadUrl = await getDownloadURL(storageRef);
+            // 1. Upload PDF using SDK Helper (Fixes CORS & Validation)
+            const { pdfUrl, pdfStoragePath } = await uploadLiquidationPdf({
+                file,
+                liquidationId: liquidationNumber
+            });
 
             // 2. Create Draft in Firestore
             const draftData = {
@@ -42,8 +42,8 @@ const LiquidationUploadModal = ({ onClose, onSuccess }) => {
                 provider: "SANCOR",
                 liquidationNumber: liquidationNumber,
                 title: `ORDEN DE LIQUIDACIÓN N° ${liquidationNumber}`,
-                pdfUrl: downloadUrl,
-                pdfStoragePath: storagePath,
+                pdfUrl: pdfUrl,
+                pdfStoragePath: pdfStoragePath,
                 totalAmount: 0, // Initial
                 currency: "ARS"
             };
@@ -54,12 +54,12 @@ const LiquidationUploadModal = ({ onClose, onSuccess }) => {
                 onSuccess(result.id); // Pass ID to parent to open Staging Manager
                 onClose();
             } else {
-                throw new Error(result.error);
+                throw new Error("Error guardando borrador: " + result.error);
             }
 
         } catch (err) {
-            console.error(err);
-            setError("Error al subir: " + err.message);
+            console.error("[Liquidations] Upload failed:", err);
+            setError(err.message || "Error desconocido al subir archivo.");
         } finally {
             setLoading(false);
         }
@@ -116,8 +116,9 @@ const LiquidationUploadModal = ({ onClose, onSuccess }) => {
                     </div>
 
                     {error && (
-                        <div className="bg-red-100 text-red-700 p-2 rounded text-sm">
-                            {error}
+                        <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-3 rounded text-sm flex items-start gap-2">
+                            <AlertCircle size={16} className="mt-0.5" />
+                            <span>{error}</span>
                         </div>
                     )}
 
