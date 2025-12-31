@@ -70,35 +70,67 @@ const MasterTable = () => {
     };
 
     // --- CALCULOS Y FILTROS ---
-    // --- CALCULOS HELPER: FECHAS (Soporte Timestamp) ---
-    const getJsDate = (val) => {
+    // --- CALCULOS HELPER: FECHAS (Unified & Robust) ---
+    const toDateSafe = (val) => {
         if (!val) return null;
         if (val instanceof Date) return val;
-        if (val && typeof val.toDate === 'function') return val.toDate(); // Firestore Timestamp
+        // Firestore Timestamp
+        if (val && typeof val.toDate === 'function') return val.toDate();
+        // Strings
         if (typeof val === 'string') {
-            // Assume DD/MM/YYYY
-            const parts = val.split('/');
-            if (parts.length === 3) return new Date(parts[2], parts[1] - 1, parts[0]);
+            // DD/MM/YYYY
+            if (val.includes('/')) {
+                const parts = val.split('/');
+                if (parts.length === 3) return new Date(parts[2], parts[1] - 1, parts[0]);
+            }
+            // YYYY-MM-DD
+            if (val.includes('-')) {
+                const parts = val.split('-');
+                if (parts.length === 3) return new Date(parts[0], parts[1] - 1, parts[2]);
+            }
         }
-        return new Date(val); // Fallback standard format
+        return new Date(val); // Fallback
+    };
+
+    const normalizeDay = (d) => {
+        if (!d) return null;
+        const n = new Date(d);
+        n.setHours(0, 0, 0, 0);
+        return n;
+    };
+
+    const calcDias = (inv) => {
+        // Reglas:
+        // 1. Normalizar a midnight para evitar diferencias de horas.
+        // 2. Si COBRADO: fechaCobro - fechaEmision.
+        // 3. Si NO COBRADO: Hoy - fechaEmision.
+        // 4. Nunca negativo.
+
+        const dEmision = normalizeDay(toDateSafe(inv.fecha));
+        if (!dEmision) return 0;
+
+        let dTarget = null;
+        if (inv.estadoDeCobro === 'COBRADO') {
+            // Priority: fechaCobro (Timestamp) > fechaPagoString (Legacy) > Today (Fallback)
+            dTarget = normalizeDay(toDateSafe(inv.fechaCobro || inv.fechaPago)) || normalizeDay(new Date());
+        } else {
+            dTarget = normalizeDay(new Date());
+        }
+
+        const diffTime = dTarget - dEmision;
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+        return Math.max(diffDays, 0);
     };
 
     const parseDateStr = (dateStr) => {
-        const d = getJsDate(dateStr);
+        const d = toDateSafe(dateStr);
         return d || new Date(0);
     };
 
-    const daysBetween = (fechaInicio, fechaFin) => {
-        const start = getJsDate(fechaInicio);
-        const end = getJsDate(fechaFin);
-        if (!start || !end) return 0;
-
-        const diffTime = end - start;
-        return Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    };
-
     const getDaysFromEmission = (dateStr) => {
-        return daysBetween(dateStr, new Date());
+        // Reutilizar logica centralizada, simular objeto inv
+        return calcDias({ fecha: dateStr, estadoDeCobro: 'NO COBRADO' });
     };
 
     const filteredInvoices = invoices.filter(inv => {
@@ -135,12 +167,7 @@ const MasterTable = () => {
         const t = colType[sortKey] || "string";
         const getSortVal = (r, k) => {
             if (k === 'dias') {
-                if (r.estadoDeCobro === 'COBRADO') {
-                    // Logic: fechaCobro (Timestamp/Date/String) > fechaPago (Legacy String) > Today
-                    const effectiveDate = r.fechaCobro || r.fechaPago || new Date();
-                    return daysBetween(r.fecha, effectiveDate);
-                }
-                return daysBetween(r.fecha, new Date());
+                return calcDias(r);
             }
             return r[k];
         };
@@ -445,11 +472,7 @@ const MasterTable = () => {
                                         ? 'text-green-600 dark:text-green-400'
                                         : 'text-red-500 dark:text-red-400'
                                         }`}>
-                                        {inv.estadoDeCobro === 'COBRADO'
-                                            // Priority: fechaCobro > fechaPago > Hoy
-                                            ? daysBetween(inv.fecha, inv.fechaCobro || inv.fechaPago || new Date())
-                                            : daysBetween(inv.fecha, new Date())
-                                        }
+                                        {calcDias(inv)}
                                     </td>
                                     <td className="p-2 flex gap-1">
                                         <button onClick={() => setEditingInvoice(inv)} className="p-1 text-[#355071] hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-slate-700 rounded" title="Editar">

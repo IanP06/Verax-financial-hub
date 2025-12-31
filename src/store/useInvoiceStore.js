@@ -412,39 +412,60 @@ const useInvoiceStore = create(
             },
 
             // LÓGICA CRÍTICA DE CAMBIO DE ESTADO
+            // LÓGICA CRÍTICA DE CAMBIO DE ESTADO
             updateInvoiceStatus: async (id, nuevoEstado, fechaPagoReal = null) => {
                 const inv = get().invoices.find(i => i.id === id);
                 if (!inv) return;
 
+                const { Timestamp, serverTimestamp } = await import('firebase/firestore');
+
                 let updates = { estadoDeCobro: nuevoEstado };
-                if (nuevoEstado === 'COBRADO' && fechaPagoReal) {
-                    const fechaEmisionObj = parseDate(inv.fecha);
-                    const fechaPagoObj = parseDate(fechaPagoReal);
-                    const diffTime = Math.abs(fechaPagoObj - fechaEmisionObj);
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                    updates.fechaPago = fechaPagoReal;
-                    updates.diasCobro = diffDays;
+
+                // Si es COBRADO, procesar fecha y guardar Timestamp
+                if (nuevoEstado === 'COBRADO') {
+                    updates.updatedAt = serverTimestamp();
+                    updates.cobradoAt = serverTimestamp(); // Audit
+
+                    if (fechaPagoReal) {
+                        try {
+                            // Parse local DD/MM/YYYY
+                            const [d, m, y] = fechaPagoReal.split('/');
+                            const dateObj = new Date(y, m - 1, d);
+
+                            // Guardar como Timestamp (Campo único de verdad)
+                            updates.fechaCobro = Timestamp.fromDate(dateObj);
+
+                            // Legacy (mantener por compatibilidad si algo lo lee)
+                            updates.fechaPago = fechaPagoReal;
+                        } catch (e) {
+                            console.error("Error parsing date for individual update:", e);
+                        }
+                    } else {
+                        // Si no hay fecha explicita (raro en UI), usar Hoy
+                        updates.fechaCobro = Timestamp.now();
+                    }
                 } else if (nuevoEstado === 'NO COBRADO') {
                     updates.fechaPago = null;
-                    updates.diasCobro = '-';
+                    updates.fechaCobro = null;
+                    updates.cobradoAt = null;
+                    // diasCobro se calcula dinámicamente, no hace falta borrarlo si no se usa
                 }
 
-                // Optimistic UI
-                const updatedInv = { ...inv, ...updates };
+                // Optimistic UI (approximate Timestamp for UI reactivity)
+                const optimisticUpdates = { ...updates };
+                if (optimisticUpdates.fechaCobro && typeof optimisticUpdates.fechaCobro.toDate !== 'function') {
+                    // Si es Timestamp real (importado), ok. Si no, simular para que UI no rompa antes de refetch
+                    // En optimistic store update, Timestamp a veces es serializado raro o es objeto complejo.
+                    // Mejor guardar el objeto Date crudo en el store local temporalmente o el Timestamp si ya lo tenemos.
+                }
+
+                const updatedInv = { ...inv, ...optimisticUpdates };
                 set(state => ({
                     invoices: state.invoices.map(i => i.id === id ? updatedInv : i)
                 }));
 
                 try {
                     await updateDoc(doc(db, 'invoices', id), updates);
-
-                    // === MIRROR SYNC ===
-                    // Nota: estadoDeCobro cambia, pero NO mapeamos estadoDeCobro a analyst mirror (solo paymentStatus, no collection status)
-                    // El user prompt dice: "el analista NO debe poder ver... estado de cobro".
-                    // Asi que aqui NO hacemos sync de mirror, porque lo que cambió es info PRIVADA del Admin.
-                    // EXCEPTO que actualicemos updatedAt o algo
-                    // ===================
-
                 } catch (e) {
                     console.error("Error actualizando estado:", e);
                 }
