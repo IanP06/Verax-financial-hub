@@ -334,17 +334,26 @@ const useInvoiceStore = create(
                 if (!docIds || docIds.length === 0) return { success: false, message: "No ids provided." };
 
                 const batchSize = 500;
-                const { writeBatch, doc } = await import('firebase/firestore');
+                const { writeBatch, doc, Timestamp, serverTimestamp } = await import('firebase/firestore');
 
                 const batches = [];
                 let currentBatch = writeBatch(db);
                 let count = 0;
 
+                // Parse fechaCobro string (DD/MM/YYYY) to Date
+                let fechaCobroTimestamp = null;
+                if (fechaCobro) {
+                    const [d, m, y] = fechaCobro.split('/');
+                    const dateObj = new Date(y, m - 1, d); // Local zone implicit
+                    fechaCobroTimestamp = Timestamp.fromDate(dateObj);
+                }
+
                 docIds.forEach(id => {
                     const ref = doc(db, 'invoices', id);
                     currentBatch.update(ref, {
                         estadoDeCobro: 'COBRADO',
-                        fechaCobro: fechaCobro
+                        fechaCobro: fechaCobroTimestamp,
+                        cobradoAt: serverTimestamp() // Audit
                     });
                     count++;
                     if (count >= batchSize) {
@@ -361,7 +370,11 @@ const useInvoiceStore = create(
                     set(state => ({
                         invoices: state.invoices.map(inv => {
                             if (docIds.includes(inv.id)) {
-                                return { ...inv, estadoDeCobro: 'COBRADO', fechaCobro: fechaCobro };
+                                return {
+                                    ...inv,
+                                    estadoDeCobro: 'COBRADO',
+                                    fechaCobro: fechaCobroTimestamp // Store assumes raw data or Timestamp, logic must handle
+                                };
                             }
                             return inv;
                         })

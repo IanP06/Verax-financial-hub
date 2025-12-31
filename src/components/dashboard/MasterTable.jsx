@@ -70,15 +70,29 @@ const MasterTable = () => {
     };
 
     // --- CALCULOS Y FILTROS ---
+    // --- CALCULOS HELPER: FECHAS (Soporte Timestamp) ---
+    const getJsDate = (val) => {
+        if (!val) return null;
+        if (val instanceof Date) return val;
+        if (val && typeof val.toDate === 'function') return val.toDate(); // Firestore Timestamp
+        if (typeof val === 'string') {
+            // Assume DD/MM/YYYY
+            const parts = val.split('/');
+            if (parts.length === 3) return new Date(parts[2], parts[1] - 1, parts[0]);
+        }
+        return new Date(val); // Fallback standard format
+    };
+
     const parseDateStr = (dateStr) => {
-        if (!dateStr) return new Date(0);
-        const [d, m, y] = dateStr.split('/');
-        return new Date(y, m - 1, d);
+        const d = getJsDate(dateStr);
+        return d || new Date(0);
     };
 
     const daysBetween = (fechaInicio, fechaFin) => {
-        const start = parseDateStr(fechaInicio);
-        const end = fechaFin instanceof Date ? fechaFin : parseDateStr(fechaFin);
+        const start = getJsDate(fechaInicio);
+        const end = getJsDate(fechaFin);
+        if (!start || !end) return 0;
+
         const diffTime = end - start;
         return Math.floor(diffTime / (1000 * 60 * 60 * 24));
     };
@@ -122,10 +136,9 @@ const MasterTable = () => {
         const getSortVal = (r, k) => {
             if (k === 'dias') {
                 if (r.estadoDeCobro === 'COBRADO') {
-                    // Calcular días reales a fecha de pago si existe, sino hoy (fallback)
-                    // NOTA: La lógica de render usa `daysBetween(inv.fecha, inv.fechaPago || new Date())`
-                    // Usamos lo mismo aquí.
-                    return daysBetween(r.fecha, r.fechaPago || new Date());
+                    // Logic: fechaCobro (Timestamp/Date/String) > fechaPago (Legacy String) > Today
+                    const effectiveDate = r.fechaCobro || r.fechaPago || new Date();
+                    return daysBetween(r.fecha, effectiveDate);
                 }
                 return daysBetween(r.fecha, new Date());
             }
@@ -433,8 +446,8 @@ const MasterTable = () => {
                                         : 'text-red-500 dark:text-red-400'
                                         }`}>
                                         {inv.estadoDeCobro === 'COBRADO'
-                                            // Usar logica identica al render previo
-                                            ? daysBetween(inv.fecha, inv.fechaPago || new Date())
+                                            // Priority: fechaCobro > fechaPago > Hoy
+                                            ? daysBetween(inv.fecha, inv.fechaCobro || inv.fechaPago || new Date())
                                             : daysBetween(inv.fecha, new Date())
                                         }
                                     </td>
