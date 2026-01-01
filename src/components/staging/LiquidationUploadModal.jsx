@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Upload, X, FileText, Loader, AlertCircle } from 'lucide-react';
 import useInvoiceStore from '../../store/useInvoiceStore';
-import { uploadLiquidationPdf } from '../../utils/storageHelpers';
+import { uploadLiquidationPdf } from '../../services/storage/uploadLiquidationPdf';
 
 const LiquidationUploadModal = ({ onClose, onSuccess }) => {
     const { saveLiquidationDraft } = useInvoiceStore();
