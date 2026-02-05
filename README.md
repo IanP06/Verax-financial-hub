@@ -50,3 +50,6 @@ Para inicializar usuarios analistas en Firebase Auth y crear sus perfiles en Fir
 3.  **Resultado**:
     *   El script creará los usuarios definidos si no existen (Password default: `VERAX1234`).
     *   Si el usuario ya existe, actualizará su perfil (Role: `analyst`) en Firestore asegurando la consistencia.
+
+> **Nota**: Para agregar nuevos analistas, editar el array `ANALYSTS` en `scripts/createUsers.mjs` y volver a correr el script. Es idempotente (no duplica ni rompe lo existente).
+
