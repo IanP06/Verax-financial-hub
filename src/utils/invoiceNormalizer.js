@@ -71,8 +71,11 @@ export const normalizeInvoiceForAnalyst = (inv) => {
     const siniestro = inv.siniestro || '';
     const compania = inv.aseguradora || inv.compania || '';
     const fechaEmision = inv.fecha || inv.fechaEmision || inv.emision || '';
+    const fechaInforme = inv.fechaInforme || '';
 
-    const diasDesdeEmision = calculateDaysSince(fechaEmision);
+    // Regla 40 días: Usar fechaInforme si existe, sino fechaEmision
+    const dateForCalc = fechaInforme || fechaEmision;
+    const diasDesdeEmision = calculateDaysSince(dateForCalc);
 
     // Resolve Money: totalAPagarAnalista (preferred) -> totalALiquidar -> totalAnalista -> 0
     let rawAmount = inv.totalAPagarAnalista;

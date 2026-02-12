@@ -1,9 +1,16 @@
 import React from 'react';
 import DropZone from './DropZone';
 import useInvoiceStore from '../../store/useInvoiceStore';
+import StagingTable from '../staging/StagingTable';
+import StagingOL from './StagingOL';
 
 const IngestView = () => {
-    const { config } = useInvoiceStore();
+    const { config, stagingLiquidation, uploadDiagnostics } = useInvoiceStore();
+
+    // DEBUG PANEL (Only dev or if flag set, using logic as requested)
+    // Always visible for now per user request "Diagnóstico visible en UI"
+    const showDebug = true;
+
     return (
         <div className="space-y-8">
             <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
@@ -14,6 +21,34 @@ const IngestView = () => {
 
                 <DropZone config={config} />
             </div>
+
+            {/* DIAGNOSTICS PANEL */}
+            {showDebug && uploadDiagnostics && (
+                <div className="bg-slate-800 text-green-400 p-4 rounded text-xs font-mono overflow-auto max-h-40 border border-green-700">
+                    <h4 className="font-bold underline mb-1">OL DIAGNOSTICS (Runtime)</h4>
+                    <div>Last Step: {uploadDiagnostics.lastStep}</div>
+                    <div>File: {uploadDiagnostics.lastUploadFileName}</div>
+                    <div>Type: <span className={uploadDiagnostics.olDetected ? "bg-green-900 px-1" : "bg-slate-700 px-1"}>{uploadDiagnostics.lastUploadType}</span></div>
+                    <div>Detected OL: {uploadDiagnostics.olDetected ? 'YES' : 'NO'}</div>
+                    <div>Staging Present: {stagingLiquidation ? 'YES' : 'NO'} ({stagingLiquidation?.kind})</div>
+                    {uploadDiagnostics.error && <div className="text-red-400 font-bold">ERROR: {uploadDiagnostics.error}</div>}
+                    <details>
+                        <summary className="cursor-pointer">Staging Dump</summary>
+                        <pre>{JSON.stringify({
+                            olNum: stagingLiquidation?.numeroOL,
+                            items: stagingLiquidation?.items?.length,
+                            date: stagingLiquidation?.fechaEmision
+                        }, null, 2)}</pre>
+                    </details>
+                </div>
+            )}
+
+            {/* BRANCHING LOGIC: OL vs NORMAL */}
+            {stagingLiquidation?.kind === 'LIQUIDATION' ? (
+                <StagingOL />
+            ) : (
+                <StagingTable />
+            )}
 
             {/* Instructions / Tips */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

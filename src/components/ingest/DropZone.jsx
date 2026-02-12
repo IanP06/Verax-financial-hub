@@ -6,31 +6,106 @@ import { parseInvoicePDF } from '../../utils/pdfProcessor';
 import { useNavigate } from 'react-router-dom';
 
 const DropZone = ({ config }) => {
-    const { addStagingInvoice } = useInvoiceStore();
+    // FIX: Use explicit selectors to prevent ReferenceError
+    const addStagingInvoice = useInvoiceStore((state) => state.addStagingInvoice);
+    const setStagingLiquidation = useInvoiceStore((state) => state.setStagingLiquidation);
+    const setUploadDiagnostics = useInvoiceStore((state) => state.setUploadDiagnostics);
+
     const navigate = useNavigate();
 
     const onDrop = useCallback(async (acceptedFiles) => {
+        // Init Diagnostics
+        setUploadDiagnostics({
+            lastStep: 'start_upload',
+            lastUploadFileName: acceptedFiles[0]?.name || 'unknown',
+            olDetected: false,
+            error: null
+        });
+
         // Prepare dynamic seeds from config
         const companiesSeeds = config?.validAseguradoras || [];
         const emittersSeeds = config?.validEmisores || [];
 
         let processedCount = 0;
-        for (const file of acceptedFiles) {
+        for (const [index, file] of acceptedFiles.entries()) {
             if (file.type === 'application/pdf') {
                 try {
+                    // --- IS VALID PDF ---
+                    setUploadDiagnostics({ lastStep: 'parsing_pdf' });
+
+                    // 3. Parse content
                     const data = await parseInvoicePDF(file, { companiesSeeds, emittersSeeds });
-                    addStagingInvoice(data);
+
+                    // EMPTY TEXT CHECK
+                    if (!data.rawTextLength || data.rawTextLength < 10) {
+                        setUploadDiagnostics({ error: 'EMPTY_PDF_TEXT', lastStep: 'error' });
+                        alert(`No se pudo leer texto de ${file.name}. ¿Es una imagen o está escaneado?`);
+                        continue;
+                    }
+
+                    // 4. OL DETECTION vs NORMAL INVOICE
+                    setUploadDiagnostics({
+                        lastStep: 'analyzing_content',
+                        olDetected: data.isOL,
+                        lastUploadType: data.isOL ? 'OL' : 'NORMAL'
+                    });
+
+                    if (data.isOL) {
+                        // MINIMAL VIABLE STAGING OBJECT
+                        const safeLiquidation = {
+                            kind: 'LIQUIDATION',
+                            items: [
+                                {
+                                    id: Date.now(),
+                                    siniestro: '',
+                                    analista: '', // Explicit empty string
+                                    montoGestion: 20000,
+                                    ahorroTotal: 0,
+                                    plusPorAhorro: 0,
+                                    ahorroAPagar: 0,
+                                    viaticos: 0,
+                                    fechaInforme: '', // Must be filled by user
+                                    totalAPagarAnalista: 20000
+                                }
+                            ],
+                            emisorNombre: data.emisor !== 'DESCONOCIDO' ? data.emisor : 'SANCOR', // Force SANCOR if suspect
+                            emisorCuit: '',
+                            fechaEmision: data.fecha || new Date().toLocaleDateString(),
+                            numeroOL: data.olNumero || data.nroFactura || '',
+                            totalOL: data.monto,
+                            pdfFile: file,
+                            pdfFileName: file.name
+                        };
+
+                        setStagingLiquidation(safeLiquidation);
+
+                        setUploadDiagnostics({
+                            lastStep: 'staging_store_set',
+                            stagingLiquidationPresent: true
+                        });
+
+                    } else {
+                        // Normal Inv
+                        addStagingInvoice({
+                            id: Date.now() + index,
+                            file,
+                            ...data
+                        });
+                        setUploadDiagnostics({ lastStep: 'staging_normal_set' });
+                    }
                     processedCount++;
                 } catch (error) {
                     console.error(`Error al procesar ${file.name}:`, error);
+                    setUploadDiagnostics({ error: error.message, lastStep: 'exception' });
                     alert(`Error leyendo ${file.name}`);
                 }
             }
         }
         if (processedCount > 0) {
+            setUploadDiagnostics({ lastStep: 'navigating_to_staging' });
             navigate('/staging');
         }
-    }, [addStagingInvoice, navigate]);
+    }, [addStagingInvoice, setStagingLiquidation, setUploadDiagnostics, navigate, config]);
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,

@@ -133,5 +133,48 @@ export const parseInvoicePDF = async (file, { companiesSeeds = [], emittersSeeds
         plusPorAhorro = parseFloat(normalized) || 0;
     }
 
-    return { nroFactura, siniestro, aseguradora, emisor, monto, fecha, plusPorAhorro };
+    // 9. DETECCIÓN DE OL (ORDEN DE LIQUIDACIÓN) - ROBUSTA
+    const olRegex = /ORDEN\s+DE\s+LIQUIDACI[OÓ]N|ORDEN\s+DE\s+PAGO|LIQUIDACI[OÓ]N\s+.*SANCOR|O\.L\.\s*N[°º.]?|OL\s*N[°º.]?/i;
+    const isOL = olRegex.test(cleanText);
+
+    let olNumero = '';
+    if (isOL) {
+        // Extract OL Number: "ORDEN DE LIQUIDACION N° 94165" or "O.L. N° 94165"
+        const olMatch = cleanText.match(/(?:ORDEN\s+DE\s+LIQUIDACI[OÓ]N|O\.L\.|OL)\s+(?:N[°º.]?)?\s*(\d+)/i);
+        if (olMatch) olNumero = olMatch[1];
+        // Fallback: look for generic "N° XXXXX" near "Liquidacion"
+        if (!olNumero) {
+            const fallbackMatch = cleanText.match(/N[°º.]\s*(\d{4,8})/);
+            if (fallbackMatch) olNumero = fallbackMatch[1];
+        }
+    }
+
+    // 10. CLEANUP & SIGNIFICANT FIGURES
+    // Revert to original simple logic: take last part of filename, parse int.
+    // 20219081090_011_00003_00001023 -> 1023
+    try {
+        const parts = file.name.split('_');
+        const lastPart = parts[parts.length - 1].replace('.pdf', '');
+        nroFactura = String(parseInt(lastPart, 10)); // "1023"
+        // If it was NaN (e.g. random filename), fallback to "S/N" was set at top
+        if (nroFactura === 'NaN') nroFactura = 'S/N';
+    } catch (e) {
+        console.warn("Error parsing filename for significant figures", e);
+    }
+
+    return {
+        nroFactura,
+        siniestro,
+        aseguradora,
+        emisor,
+        monto,
+        fecha,
+        plusPorAhorro,
+        isOL,
+        olNumero,
+        isOL,
+        olNumero,
+        rawTextLength: cleanText.length,
+        rawText: cleanText.slice(0, 500)
+    };
 };

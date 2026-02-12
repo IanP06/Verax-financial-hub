@@ -1,13 +1,24 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { db } from '../lib/firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, writeBatch, getDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, writeBatch, getDoc, query, where, serverTimestamp } from 'firebase/firestore';
 
 // Helper para parsear fechas DD/MM/AAAA a objeto Date JS
 const parseDate = (dateStr) => {
     if (!dateStr) return new Date();
     const [day, month, year] = dateStr.split('/');
     return new Date(year, month - 1, day);
+};
+
+// Helper para fechaInforme (si string DD/MM/YYYY) o fechaEmison
+// Ahora usada en Mirrors y Stores para consistencia
+const getEffectiveDate = (invoice) => {
+    // Si tiene fechaInforme, esa manda para el analista (40 días regla)
+    // PERO ojo: la fecha de emisión sigue siendo la contable.
+    // El mirror debe recibir la fechaEmision para mostrar, 
+    // pero quizás un campo extra 'fechaCalculo' si la UI del analista lo usa.
+    // Por ahora, pasamos las dos.
+    return invoice.fechaInforme || invoice.fecha;
 };
 
 // === MIRROR HELPERS ===
@@ -35,6 +46,7 @@ const syncInvoiceToAnalystMirror = async (invoiceData, invoiceId, analystProfile
             claimNumber: invoiceData.nroSiniestro || "S/N",
             insurer: invoiceData.aseguradora || "Desconocida",
             issueDate: invoiceData.fecha || "", // String DD/MM/YYYY
+            reportDate: invoiceData.fechaInforme || null, // NEW: Para regla 40 días
             // totalToLiquidate = gestion + ahorroAPagar + viaticos
             totalToLiquidate: Number(invoiceData.totalAPagarAnalista || 0),
             paymentStatus: invoiceData.estadoPago || "IMPAGO",
@@ -70,6 +82,15 @@ const useInvoiceStore = create(
     persist(
         (set, get) => ({
             stagingInvoices: [],
+            stagingLiquidation: null, // NEW: { items: [], emisorNombre, ... }
+            uploadDiagnostics: { // NEW: Debugging state
+                lastStep: 'init',
+                lastUploadType: 'NONE',
+                lastUploadFileName: '',
+                olDetected: false,
+                stagingLiquidationPresent: false,
+                error: null
+            },
             invoices: [],
             liquidations: [], // [NEW] Admin: List of Mother Invoices
             liquidationItems: [], // [NEW] Admin/Analyst: List of Items
@@ -367,6 +388,138 @@ const useInvoiceStore = create(
                     return updated;
                 })
             })),
+
+
+
+            // Acciones de Staging OL (Liquidación)
+            setUploadDiagnostics: (diag) => set(state => ({
+                uploadDiagnostics: { ...state.uploadDiagnostics, ...diag }
+            })),
+
+            // Permite 'set' completo para cuando se parsea una OL nueva
+            setStagingLiquidation: (data) => set({ stagingLiquidation: data }),
+
+            // Permite agregar sprouts (siniestros) a la OL en curso
+            addSproutToLiquidation: (sprout) => set(state => ({
+                stagingLiquidation: {
+                    ...state.stagingLiquidation,
+                    items: [...(state.stagingLiquidation.items || []), { ...sprout, id: Date.now() }]
+                }
+            })),
+
+            removeSproutFromLiquidation: (sproutId) => set(state => ({
+                stagingLiquidation: {
+                    ...state.stagingLiquidation,
+                    items: state.stagingLiquidation.items.filter(i => i.id !== sproutId)
+                }
+            })),
+
+            updateSproutInLiquidation: (sproutId, field, value) => set(state => ({
+                stagingLiquidation: {
+                    ...state.stagingLiquidation,
+                    items: state.stagingLiquidation.items.map(i => {
+                        if (i.id !== sproutId) return i;
+                        const updated = { ...i, [field]: value };
+                        // Auto-calc similar a staging normal
+                        if (['montoGestion', 'plusPorAhorro', 'ahorroTotal', 'viaticos'].includes(field)) {
+                            const savingsBase = Number(updated.ahorroTotal) || 0;
+                            const pct = Number(updated.plusPorAhorro) || 0;
+                            updated.ahorroAPagar = Math.round(savingsBase * (pct / 100));
+                            updated.totalAPagarAnalista = Number(updated.montoGestion || 0) + Number(updated.ahorroAPagar || 0) + Number(updated.viaticos || 0);
+                        }
+                        return updated;
+                    })
+                }
+            })),
+
+            updateLiquidationHeader: (field, value) => set(state => ({
+                stagingLiquidation: { ...state.stagingLiquidation, [field]: value }
+            })),
+
+            resetStaging: () => set({ stagingInvoices: [], stagingLiquidation: null }),
+
+            // CONFIRM LIQUIDATION (OL)
+            confirmLiquidation: async (pdfFile) => {
+                const { stagingLiquidation, invoices, analystProfiles } = get();
+                if (!stagingLiquidation) return;
+
+                const { items, ...header } = stagingLiquidation;
+                // Header: emisorCuit, emisorNombre, fechaEmision, numeroOL, totalOL, pdfFile...
+
+                // 1. Upload PDF
+                let pdfUrl = '';
+                try {
+                    if (pdfFile) {
+                        const { getStorage, ref, uploadBytesResumable, getDownloadURL } = await import('firebase/storage');
+                        const storage = getStorage();
+                        const filename = `${Date.now()}_${pdfFile.name}`;
+                        const storageRef = ref(storage, `liquidations/${header.numeroOL || 'S_N'}/${filename}`);
+                        await uploadBytesResumable(storageRef, pdfFile);
+                        pdfUrl = await getDownloadURL(storageRef);
+                    }
+                } catch (e) {
+                    console.error("Upload failed", e);
+                    alert("Error subiendo PDF. Se cancela la operación.");
+                    return;
+                }
+
+                // 2. Batch Write: 1 Mother + N Sprouts
+                const batch = writeBatch(db);
+
+                // Mother Doc
+                const olRef = doc(collection(db, 'liquidationOrders'));
+                batch.set(olRef, {
+                    ...header,
+                    pdfUrl,
+                    createdAt: serverTimestamp(),
+                    createdBy: 'ADMIN', // TODO: User ID if available
+                    sproutsCount: items.length
+                });
+
+                // Sprout Docs
+                const newInvoices = [];
+                items.forEach((item, idx) => {
+                    const invoiceRef = doc(collection(db, 'invoices'));
+                    const sproutData = {
+                        ...item,
+                        olId: olRef.id,
+                        sourceType: 'OL',
+                        nroFactura: `${header.numeroOL}-${idx + 1}`, // Generate unique Invoice ID based on OL
+                        emisor: header.emisorNombre,
+                        emisorCuit: header.emisorCuit,
+                        fecha: header.fechaEmision, // Contable
+                        // fechaInforme viene en item
+                        createdFromOL: true,
+                        createdAt: serverTimestamp()
+                    };
+
+                    // Cleanup undefineds
+                    Object.keys(sproutData).forEach(key => sproutData[key] === undefined && delete sproutData[key]);
+
+                    batch.set(invoiceRef, sproutData);
+                    newInvoices.push({ ...sproutData, id: invoiceRef.id });
+                });
+
+                try {
+                    await batch.commit();
+
+                    // 3. Update Local State & Mirror
+                    set(state => ({
+                        invoices: [...state.invoices, ...newInvoices],
+                        stagingLiquidation: null // Clear staging
+                    }));
+
+                    // Sync Mirrors
+                    for (const inv of newInvoices) {
+                        await syncInvoiceToAnalystMirror(inv, inv.id, analystProfiles);
+                    }
+
+                    console.log("Liquidation Confirmed!");
+                } catch (e) {
+                    console.error("Error committing batch:", e);
+                    alert("Error guardando en base de datos.");
+                }
+            },
 
             // CONFIRM: Mueve de Staging (Local) a Invoices (Firestore)
             confirmInvoice: async (id) => {
