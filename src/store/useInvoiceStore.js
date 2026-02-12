@@ -248,9 +248,6 @@ const useInvoiceStore = create(
                 })
             })),
 
-<<<<<<< Updated upstream
-=======
-
 
             // Acciones de Staging OL (Liquidación)
             setUploadDiagnostics: (diag) => set(state => ({
@@ -419,7 +416,6 @@ const useInvoiceStore = create(
                 }
             },
 
->>>>>>> Stashed changes
             // CONFIRM: Mueve de Staging (Local) a Invoices (Firestore)
             confirmInvoice: async (id) => {
                 const invoice = get().stagingInvoices.find((i) => i.id === id);
