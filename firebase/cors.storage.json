@@ -1,0 +1,27 @@
+[
+    {
+        "origin": [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "https://verax-financial-hub.vercel.app",
+            "https://verax-financial-hub-git-main-ianp06s-projects.vercel.app"
+        ],
+        "method": [
+            "GET",
+            "POST",
+            "PUT",
+            "HEAD",
+            "DELETE",
+            "OPTIONS"
+        ],
+        "responseHeader": [
+            "Content-Type",
+            "Authorization",
+            "x-goog-resumable",
+            "x-goog-meta-full-control-list",
+            "x-goog-custom-time",
+            "x-firebase-storage-version"
+        ],
+        "maxAgeSeconds": 3600
+    }
+]

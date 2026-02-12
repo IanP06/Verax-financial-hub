@@ -248,6 +248,178 @@ const useInvoiceStore = create(
                 })
             })),
 
+<<<<<<< Updated upstream
+=======
+
+
+            // Acciones de Staging OL (Liquidación)
+            setUploadDiagnostics: (diag) => set(state => ({
+                uploadDiagnostics: { ...state.uploadDiagnostics, ...diag }
+            })),
+
+            // Permite 'set' completo para cuando se parsea una OL nueva
+            setStagingLiquidation: (data) => set({ stagingLiquidation: data }),
+
+            // Permite agregar sprouts (siniestros) a la OL en curso
+            addSproutToLiquidation: (sprout) => set(state => ({
+                stagingLiquidation: {
+                    ...state.stagingLiquidation,
+                    items: [...(state.stagingLiquidation.items || []), { ...sprout, id: Date.now() }]
+                }
+            })),
+
+            removeSproutFromLiquidation: (sproutId) => set(state => ({
+                stagingLiquidation: {
+                    ...state.stagingLiquidation,
+                    items: state.stagingLiquidation.items.filter(i => i.id !== sproutId)
+                }
+            })),
+
+            updateSproutInLiquidation: (sproutId, field, value) => set(state => ({
+                stagingLiquidation: {
+                    ...state.stagingLiquidation,
+                    items: state.stagingLiquidation.items.map(i => {
+                        if (i.id !== sproutId) return i;
+                        const updated = { ...i, [field]: value };
+                        // Auto-calc similar a staging normal
+                        if (['montoGestion', 'plusPorAhorro', 'ahorroTotal', 'viaticos'].includes(field)) {
+                            const savingsBase = Number(updated.ahorroTotal) || 0;
+                            const pct = Number(updated.plusPorAhorro) || 0;
+                            updated.ahorroAPagar = Math.round(savingsBase * (pct / 100));
+                            updated.totalAPagarAnalista = Number(updated.montoGestion || 0) + Number(updated.ahorroAPagar || 0) + Number(updated.viaticos || 0);
+                        }
+                        return updated;
+                    })
+                }
+            })),
+
+            updateLiquidationHeader: (field, value) => set(state => ({
+                stagingLiquidation: { ...state.stagingLiquidation, [field]: value }
+            })),
+
+            resetStaging: () => set({ stagingInvoices: [], stagingLiquidation: null }),
+
+            // CONFIRM LIQUIDATION (OL)
+            confirmLiquidation: async (pdfFile) => {
+                const { stagingLiquidation, invoices, analystProfiles } = get();
+                if (!stagingLiquidation) return { success: false, error: "No hay liquidación en staging" };
+
+                const { items, ...header } = stagingLiquidation;
+                // Header: emisorCuit, emisorNombre, fechaEmision, numeroOL, totalOL, pdfFile...
+
+                // 1. Upload PDF with Timeout & Retry Logic
+                let pdfUrl = '';
+                try {
+                    if (pdfFile) {
+                        const { getStorage, ref, uploadBytesResumable, getDownloadURL } = await import('firebase/storage');
+                        const storage = getStorage();
+
+                        // DEV: Bucket Check
+                        if (import.meta.env.DEV) {
+                            console.log("Bytes Upload Target Bucket:", storage.app.options.storageBucket);
+                        }
+
+                        // FALLBACK DEV (Localhost Plan B)
+                        // Si falla CORS en localhost, permitimos seguir sin URL real para no bloquear testing.
+                        const isDev = import.meta.env.DEV;
+
+                        const filename = `${Date.now()}_${pdfFile.name}`;
+                        const storageRef = ref(storage, `liquidations/${header.numeroOL || 'S_N'}/${filename}`);
+
+                        // Create a promise that rejects in X seconds
+                        const timeoutPromise = new Promise((_, reject) =>
+                            setTimeout(() => reject(new Error("UPLOAD_TIMEOUT")), 15000)
+                        );
+
+                        try {
+                            // Upload Promise
+                            const uploadTask = uploadBytesResumable(storageRef, pdfFile);
+                            // Race condition: Upload vs Timeout
+                            await Promise.race([uploadTask, timeoutPromise]);
+                            pdfUrl = await getDownloadURL(storageRef);
+                        } catch (uploadError) {
+                            // If in DEV and error is CORS or Timeout, we fallback to a placeholder
+                            if (isDev) {
+                                console.warn("Dev Environment: Upload failed (CORS/Timeout). Using mock URL to proceed.");
+                                pdfUrl = `https://mock-local-url.com/${filename}`;
+                                alert("DEV MODE: Se usó una URL simulada porque falló la subida (CORS/Timeout). El flujo continúa.");
+                            } else {
+                                throw uploadError; // Propagate in Prod
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error("Upload error details:", e);
+                    let msg = "Error subiendo PDF.";
+                    if (e.message === "UPLOAD_TIMEOUT") msg = "La subida demoró demasiado (Timeout 15s). Verifique su conexión.";
+                    else if (e.code === 'storage/unauthorized') msg = "Permisos insuficientes para subir archivos (CORS/Auth).";
+                    else if (e.code === 'storage/canceled') msg = "Subida cancelada por el usuario.";
+
+                    alert(msg);
+                    return { success: false, error: msg, code: e.code };
+                }
+
+                // 2. Batch Write: 1 Mother + N Sprouts
+                const batch = writeBatch(db);
+
+                // Mother Doc
+                const olRef = doc(collection(db, 'liquidationOrders'));
+                batch.set(olRef, {
+                    ...header,
+                    pdfUrl, // Might be empty if upload failed but we decided to proceed? No, we return above.
+                    createdAt: serverTimestamp(),
+                    createdBy: 'ADMIN',
+                    sproutsCount: items.length
+                });
+
+                // Sprout Docs
+                const newInvoices = [];
+                items.forEach((item, idx) => {
+                    const invoiceRef = doc(collection(db, 'invoices'));
+                    const sproutData = {
+                        ...item,
+                        olId: olRef.id,
+                        sourceType: 'OL',
+                        nroFactura: `${header.numeroOL}-${idx + 1}`, // Generate unique Invoice ID based on OL
+                        emisor: header.emisorNombre,
+                        emisorCuit: header.emisorCuit,
+                        fecha: header.fechaEmision, // Contable
+                        // fechaInforme viene vacio o lleno en item
+                        createdFromOL: true,
+                        createdAt: serverTimestamp()
+                    };
+
+                    // Cleanup undefineds
+                    Object.keys(sproutData).forEach(key => sproutData[key] === undefined && delete sproutData[key]);
+
+                    batch.set(invoiceRef, sproutData);
+                    newInvoices.push({ ...sproutData, id: invoiceRef.id });
+                });
+
+                try {
+                    await batch.commit();
+
+                    // 3. Update Local State & Mirror
+                    set(state => ({
+                        invoices: [...state.invoices, ...newInvoices],
+                        stagingLiquidation: null // Clear staging
+                    }));
+
+                    // Sync Mirrors
+                    for (const inv of newInvoices) {
+                        await syncInvoiceToAnalystMirror(inv, inv.id, analystProfiles);
+                    }
+
+                    console.log("Liquidation Confirmed!");
+                    return { success: true };
+                } catch (e) {
+                    console.error("Error committing batch:", e);
+                    alert("Error guardando en base de datos: " + e.message);
+                    return { success: false, error: e.message };
+                }
+            },
+
+>>>>>>> Stashed changes
             // CONFIRM: Mueve de Staging (Local) a Invoices (Firestore)
             confirmInvoice: async (id) => {
                 const invoice = get().stagingInvoices.find((i) => i.id === id);
