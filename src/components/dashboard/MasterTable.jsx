@@ -102,11 +102,15 @@ const MasterTable = () => {
     const calcDias = (inv) => {
         // Reglas:
         // 1. Normalizar a midnight para evitar diferencias de horas.
-        // 2. Si COBRADO: fechaCobro - fechaEmision.
-        // 3. Si NO COBRADO: Hoy - fechaEmision.
-        // 4. Nunca negativo.
+        // 2. Si tiene FECHA INFORME, se prioriza sobre FECHA EMISION para el cálculo de antigüedad (Regla 40 días).
+        // 3. Si COBRADO: fechaCobro - (fechaInforme || fechaEmision).
+        // 4. Si NO COBRADO: Hoy - (fechaInforme || fechaEmision).
+        // 5. Nunca negativo.
 
-        const dEmision = normalizeDay(toDateSafe(inv.fecha));
+        // Prioridad: Fecha Informe > Fecha Emisión
+        const fechaBase = inv.fechaInforme ? toDateSafe(inv.fechaInforme) : toDateSafe(inv.fecha);
+        const dEmision = normalizeDay(fechaBase);
+
         if (!dEmision) return 0;
 
         let dTarget = null;
@@ -128,9 +132,9 @@ const MasterTable = () => {
         return d || new Date(0);
     };
 
-    const getDaysFromEmission = (dateStr) => {
-        // Reutilizar logica centralizada, simular objeto inv
-        return calcDias({ fecha: dateStr, estadoDeCobro: 'NO COBRADO' });
+    const getDaysFromEmission = (inv) => {
+        // Now passing the full invoice object to verify fields
+        return calcDias({ ...inv, estadoDeCobro: 'NO COBRADO' });
     };
 
     const filteredInvoices = invoices.filter(inv => {
@@ -152,7 +156,7 @@ const MasterTable = () => {
 
         let matchVencidos = true;
         if (filters.mostrarVencidos) {
-            const days = getDaysFromEmission(inv.fecha);
+            const days = getDaysFromEmission(inv);
             matchVencidos = days >= 40 && (inv.estadoPago || 'IMPAGO') === 'IMPAGO';
         }
 
@@ -188,7 +192,10 @@ const MasterTable = () => {
         const aseg = inv.aseguradora ? inv.aseguradora.toUpperCase() : 'OTRA';
         const asegConfig = config?.aseguradoras?.[aseg] || config?.aseguradoras?.['OTRA'] || defaultConfig;
 
-        const emissionDate = parseDateStr(inv.fecha);
+        // Use fechaInforme as priority, fallback to fecha
+        const dateBase = inv.fechaInforme || inv.fecha;
+        const emissionDate = parseDateStr(dateBase);
+
         const totalDays = (asegConfig.dias || 30) + (asegConfig.tolerancia || 0);
 
         const deadline = new Date(emissionDate);

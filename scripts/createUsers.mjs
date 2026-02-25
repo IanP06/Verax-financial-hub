@@ -16,7 +16,9 @@ const ANALYSTS = [
     { email: "jazzurra15@gmail.com", name: "Jazmin" },
     { email: "danibarretin@gmail.com", name: "Daniel" },
     { email: "clu75660@gmail.com", name: "Eugenia y Debora" },
-    { email: "gb.asaavedra@gmail.com", name: "Ayelen" }
+    { email: "gb.asaavedra@gmail.com", name: "Ayelen" },
+	{ email: "inspectorekanizsa@gmail.com", name: "Ezequiel" },
+	{ email: "luishguilledo@gmail.com", name: "Luis" }
 ];
 
 // MAIN

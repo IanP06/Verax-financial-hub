@@ -83,6 +83,18 @@ const EditInvoiceModal = ({ invoice, onClose }) => {
                                 <label className={labelClass}>Fecha Emisión</label>
                                 <input name="fecha" value={formData.fecha || ''} onChange={handleChange} className={inputClass} placeholder="DD/MM/AAAA" />
                             </div>
+                            <div>
+                                <label className={labelClass}>Fecha Informe</label>
+                                <input type="date" name="fechaInforme" value={formData.fechaInforme ? new Date(formData.fechaInforme.split('/').reverse().join('-')).toISOString().split('T')[0] : ''} onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (!val) setFormData(prev => ({ ...prev, fechaInforme: '' }));
+                                    else {
+                                        const [y, m, d] = val.split('-');
+                                        setFormData(prev => ({ ...prev, fechaInforme: `${d}/${m}/${y}` }));
+                                    }
+                                }} className={inputClass} />
+                                <span className="text-[10px] text-gray-500 text-right block">Para regla 40 días</span>
+                            </div>
                         </div>
                     </div>
 

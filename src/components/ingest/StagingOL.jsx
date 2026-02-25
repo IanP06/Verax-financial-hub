@@ -22,6 +22,13 @@ const StagingOL = () => {
             return;
         }
 
+        // Validate fechaInforme in all items
+        const missingDate = items.some(i => !i.fechaInforme);
+        if (missingDate) {
+            alert("Todos los siniestros deben tener una 'Fecha Informe' válida.");
+            return;
+        }
+
         if (window.confirm("¿Confirmar Orden de Liquidación y generar facturas?")) {
             setIsSubmitting(true);
             try {
