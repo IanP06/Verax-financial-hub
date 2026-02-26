@@ -164,7 +164,7 @@ const MasterTable = () => {
     // Note: This means if a page has 0 vencidos, it shows empty. 
     // A robust way requires saving 'dueDate' and querying by it.
     // As per user instructions: "Mantener filtros actuales... integrados con paginación"
-    const pageRows = invoicesPage.filter(inv => {
+    const filteredInvoices = invoicesPage.filter(inv => {
         let matchVencidos = true;
         if (filters.mostrarVencidos) {
             const days = getDaysFromEmission(inv);
@@ -178,7 +178,7 @@ const MasterTable = () => {
     // We do sorting in Firestore mostly, but client sorting for the current page can remain for non-indexed fields if needed
     // However since we order on DB, this is redundant but safe.
     const visibleRows = React.useMemo(() => {
-        const rows = [...pageRows];
+        const rows = [...filteredInvoices];
         if (!sortKey) return rows;
 
         const t = colType[sortKey] || "string";
@@ -196,7 +196,7 @@ const MasterTable = () => {
             return sortDir === "asc" ? c : -c;
         });
         return rows;
-    }, [pageRows, sortKey, sortDir]);
+    }, [filteredInvoices, sortKey, sortDir]);
 
     const isOverdue = (inv) => {
         if ((inv.estadoDeCobro || 'NO COBRADO') === 'COBRADO') return false;

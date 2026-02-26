@@ -14,7 +14,6 @@ import PayoutRequests from './components/admin/PayoutRequests';
 import { AuthProvider } from './context/AuthContext';
 import useInvoiceStore from './store/useInvoiceStore';
 import { applyTheme, getInitialTheme } from "./utils/theme";
-import ErrorBoundary from './components/common/ErrorBoundary';
 
 // === SMOKE TEST IMPORTS ===
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
@@ -71,35 +70,33 @@ function App() {
 
   return (
     <AuthProvider>
-      <ErrorBoundary>
-        <Router>
-          <Routes>
-            <Route path="/login" element={<Login />} />
+      <Router>
+        <Routes>
+          <Route path="/login" element={<Login />} />
 
-            {/* ADMIN ROUTES */}
-            <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/ingesta" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><DropZone /></AdminLayout>} />
-              <Route path="/staging" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><StagingTable /></AdminLayout>} />
-              <Route path="/dashboard" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><Dashboard /></AdminLayout>} />
-              <Route path="/payouts" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><PayoutRequests /></AdminLayout>} />
-              <Route path="/settings" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><Settings /></AdminLayout>} />
+          {/* ADMIN ROUTES */}
+          <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/ingesta" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><DropZone /></AdminLayout>} />
+            <Route path="/staging" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><StagingTable /></AdminLayout>} />
+            <Route path="/dashboard" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><Dashboard /></AdminLayout>} />
+            <Route path="/payouts" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><PayoutRequests /></AdminLayout>} />
+            <Route path="/settings" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><Settings /></AdminLayout>} />
+          </Route>
+
+          {/* ANALYST ROUTES */}
+          <Route element={<ProtectedRoute allowedRoles={['ANALYST']} />}>
+            <Route path="/analyst" element={<AnalystLayout theme={theme} toggleTheme={toggleTheme} />}>
+              <Route index element={<AnalystDashboard />} />
+              <Route path="payout-requests" element={<AnalystPayoutRequests />} />
+              {/* Add more analyst routes here */}
             </Route>
+          </Route>
 
-            {/* ANALYST ROUTES */}
-            <Route element={<ProtectedRoute allowedRoles={['ANALYST']} />}>
-              <Route path="/analyst" element={<AnalystLayout theme={theme} toggleTheme={toggleTheme} />}>
-                <Route index element={<AnalystDashboard />} />
-                <Route path="payout-requests" element={<AnalystPayoutRequests />} />
-                {/* Add more analyst routes here */}
-              </Route>
-            </Route>
-
-            {/* Catch-all */}
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
-        </Router>
-      </ErrorBoundary>
+          {/* Catch-all */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Router>
     </AuthProvider>
   );
 }
