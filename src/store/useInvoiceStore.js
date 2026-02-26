@@ -269,12 +269,6 @@ const useInvoiceStore = create(
 
             fetchInvoicesPage: async (customFilters = {}, sortConfig = null) => {
                 const { pageSize, currentPage, pageCursors } = get();
-
-                // Helper para evitar filtros inválidos
-                const isAll = (v) => !v || v === "Todos" || v === "Todas" || v === "Todos los Analistas" || v === "Todas las Cías" || v === "(Todos)";
-
-                console.log(`[PAGINATION] fetchInvoicesPage -> Page: ${currentPage} | Size: ${pageSize} | Sorting:`, sortConfig, "| Filters:", customFilters);
-
                 set({ isPageLoading: true });
 
                 try {
@@ -282,17 +276,17 @@ const useInvoiceStore = create(
                     const invoicesRef = collection(db, 'invoices');
                     let queryConstraints = [];
 
-                    // Aplicar Filtros ignorando los valores "isAll"
-                    if (!isAll(customFilters.aseguradora)) queryConstraints.push(where("aseguradora", "==", customFilters.aseguradora));
-                    if (!isAll(customFilters.analista)) queryConstraints.push(where("analista", "==", customFilters.analista));
+                    // Aplicar Filtros
+                    if (customFilters.aseguradora) queryConstraints.push(where("aseguradora", "==", customFilters.aseguradora));
+                    if (customFilters.analista) queryConstraints.push(where("analista", "==", customFilters.analista));
 
-                    if (!isAll(customFilters.estadoDeCobro)) {
+                    if (customFilters.estadoDeCobro) {
                         queryConstraints.push(where("estadoDeCobro", "==", customFilters.estadoDeCobro));
                     }
-                    if (!isAll(customFilters.estadoPago)) {
+                    if (customFilters.estadoPago) {
                         queryConstraints.push(where("estadoPago", "==", customFilters.estadoPago));
                     }
-                    if (customFilters.searchTerm?.trim()) {
+                    if (customFilters.searchTerm) {
                         const term = customFilters.searchTerm.toLowerCase().trim();
                         queryConstraints.push(where("searchTokens", "array-contains", term));
                     }
@@ -332,21 +326,13 @@ const useInvoiceStore = create(
                     let snapshot;
                     try {
                         snapshot = await getDocs(finalQuery);
-                        console.log(`[PAGINATION] Main Query Success -> snapshot.size: ${snapshot.size}`);
                     } catch (err) {
-                        console.warn("[PAGINATION] Main query failed (likely missing composite index). Falling back to basic query:", err.message);
+                        console.warn("Main query failed (likely missing composite index). Falling back to basic query:", err.message);
                         // Fallback Query: solo límite para garantizar renderizado
                         snapshot = await getDocs(query(invoicesRef, limit(pageSize)));
-                        console.log(`[PAGINATION] Fallback Query Success -> snapshot.size: ${snapshot.size}`);
                     }
 
                     const newInvoicesPage = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-
-                    if (newInvoicesPage.length > 0) {
-                        console.log("[PAGINATION] First 3 ids:", newInvoicesPage.slice(0, 3).map(d => d.id));
-                    } else {
-                        console.log("[PAGINATION] 0 rows returned for this page.");
-                    }
 
                     // Guardar Cursor para la próxima página
                     if (snapshot.docs.length > 0 && currentPage < totalPages) {
