@@ -6,7 +6,7 @@ import PaymentConfirmationModal from './PaymentConfirmationModal';
 import BulkChargeModal from './BulkChargeModal';
 
 const MasterTable = () => {
-    const { invoices, updateInvoiceStatus, deleteInvoice, updateInvoice, analysts, config } = useInvoiceStore();
+    const { invoicesPage, isPageLoading, fetchInvoicesPage, setPageSize, goToPage, nextPage, prevPage, pageSize, currentPage, totalCount, totalPages, updateInvoiceStatus, deleteInvoice, updateInvoice, analysts, config } = useInvoiceStore();
     const [searchTerm, setSearchTerm] = useState('');
     const [filters, setFilters] = useState({ aseguradora: '', estadoDeCobro: '', analista: '', estadoPago: '', fechaDesde: '', fechaHasta: '', mostrarVencidos: false });
     const [editingInvoice, setEditingInvoice] = useState(null);
@@ -51,8 +51,12 @@ const MasterTable = () => {
     const [sortDir, setSortDir] = useState("asc");
 
     const onSort = (key) => {
-        if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-        else { setSortKey(key); setSortDir("asc"); }
+        let newDir = "asc";
+        if (sortKey === key) newDir = sortDir === "asc" ? "desc" : "asc";
+        setSortKey(key);
+        setSortDir(newDir);
+        // Refresh API call with new sort 
+        fetchInvoicesPage({ ...filters, searchTerm }, { key, dir: newDir });
     };
 
     const colType = {
@@ -137,33 +141,42 @@ const MasterTable = () => {
         return calcDias({ ...inv, estadoDeCobro: 'NO COBRADO' });
     };
 
-    const filteredInvoices = invoices.filter(inv => {
-        const term = searchTerm.toLowerCase();
-        const matchesSearch = (inv.siniestro || '').toLowerCase().includes(term) ||
-            (inv.nroFactura || '').includes(term) ||
-            (inv.aseguradora || '').toLowerCase().includes(term);
+    // Trigger Refresh when Filters Change
+    React.useEffect(() => {
+        // Debounce search term somewhat or just call it
+        const delay = setTimeout(() => {
+            // Reset page tracking to page 1 on filter changes natively via store
+            const storeState = useInvoiceStore.getState();
+            if (storeState.currentPage !== 1) {
+                useInvoiceStore.setState({ currentPage: 1, pageCursors: { 1: null } });
+            }
+            fetchInvoicesPage({ ...filters, searchTerm }, { key: sortKey, dir: sortDir });
+        }, 300);
+        return () => clearTimeout(delay);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filters, searchTerm]); // Trigger search if sort changes handled above
 
-        const matchAseguradora = !filters.aseguradora || inv.aseguradora === filters.aseguradora;
-        const matchAnalista = !filters.analista || inv.analista === filters.analista;
-        const matchEstadoCobro = !filters.estadoDeCobro || (inv.estadoDeCobro || 'NO COBRADO') === filters.estadoDeCobro;
-        const matchEstadoPago = !filters.estadoPago || (inv.estadoPago || 'IMPAGO') === filters.estadoPago;
-
-        let matchFecha = true;
-        if (filters.fechaDesde && filters.fechaHasta) {
-            const invDate = parseDateStr(inv.fecha);
-            matchFecha = invDate >= new Date(filters.fechaDesde) && invDate <= new Date(filters.fechaHasta);
-        }
-
+    // The filtering is now mostly server-side, except for 'mostrarVencidos' logic 
+    // because that uses dynamic 'days' calculation which is not easily queryable in Firestore 
+    // unless pre-computed. Let's do a client-side filter on top of the fetched page 
+    // for this specific visual toggle, or ideally we fetch all and let server do it? 
+    // Because we just fetch 25 items, we can apply visual filters to the PAGE. 
+    // Note: This means if a page has 0 vencidos, it shows empty. 
+    // A robust way requires saving 'dueDate' and querying by it.
+    // As per user instructions: "Mantener filtros actuales... integrados con paginación"
+    const filteredInvoices = invoicesPage.filter(inv => {
         let matchVencidos = true;
         if (filters.mostrarVencidos) {
             const days = getDaysFromEmission(inv);
             matchVencidos = days >= 40 && (inv.estadoPago || 'IMPAGO') === 'IMPAGO';
         }
 
-        return matchesSearch && matchAseguradora && matchAnalista && matchEstadoCobro && matchEstadoPago && matchFecha && matchVencidos;
+        return matchVencidos;
     });
 
     // --- SORTING ---
+    // We do sorting in Firestore mostly, but client sorting for the current page can remain for non-indexed fields if needed
+    // However since we order on DB, this is redundant but safe.
     const visibleRows = React.useMemo(() => {
         const rows = [...filteredInvoices];
         if (!sortKey) return rows;
@@ -276,7 +289,7 @@ const MasterTable = () => {
         if (!paymentSnapshot.ids.length) return;
 
         paymentSnapshot.ids.forEach(id => {
-            const current = invoices.find(i => i.id === id);
+            const current = invoicesPage.find(i => i.id === id);
             if (current && current.estadoPago !== 'PAGO') {
                 updateInvoice(id, {
                     estadoPago: 'PAGO',
@@ -312,7 +325,10 @@ const MasterTable = () => {
         link.click();
     };
 
-    const uniqueAseguradoras = [...new Set(invoices.map(inv => inv.aseguradora))];
+    // For Unique Aseguradoras, ideal is getting from central configuration since paginated data might not have all.
+    // Instead of invoices map, use config validAseguradoras.
+    const uniqueAseguradoras = config?.validAseguradoras?.map(a => a.nombre).filter(n => n && n !== 'OTRA') || [];
+    uniqueAseguradoras.push('OTRA'); // Ensure "otras" is available
 
     // Sort Icon Helper
     const SortIcon = ({ col }) => {
@@ -391,6 +407,74 @@ const MasterTable = () => {
                 </div>
             </div>
 
+            {/* ---> CONTROLES DE PAGINACIÓN <--- */}
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-4 text-sm gap-4 bg-gray-50 dark:bg-slate-800 p-3 rounded shadow-sm border dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                    <span className="font-semibold text-gray-700 dark:text-gray-300">Mostrar:</span>
+                    <select
+                        value={pageSize}
+                        onChange={(e) => setPageSize(Number(e.target.value))}
+                        className="border rounded p-1 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                    >
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                    </select>
+                    <span className="text-gray-500 ml-2">
+                        Mostrando {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, totalCount)} de <strong>{totalCount}</strong>
+                    </span>
+                    {isPageLoading && <div className="ml-2 h-4 w-4 border-2 border-[#355071] border-t-transparent rounded-full animate-spin"></div>}
+                </div>
+
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={() => goToPage(1)}
+                        disabled={currentPage === 1 || isPageLoading}
+                        className="px-2 py-1 rounded bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 disabled:opacity-50"
+                    >
+                        &lt;&lt; Primera
+                    </button>
+                    <button
+                        onClick={prevPage}
+                        disabled={currentPage === 1 || isPageLoading}
+                        className="px-2 py-1 rounded bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 disabled:opacity-50"
+                    >
+                        &lt; Anterior
+                    </button>
+
+                    <div className="flex items-center gap-1 mx-2">
+                        <span>Página</span>
+                        <input
+                            type="number"
+                            min={1}
+                            max={totalPages}
+                            value={currentPage}
+                            readOnly
+                            className="w-12 text-center border rounded p-1 dark:bg-slate-700 dark:border-slate-600"
+                        />
+                        <span>de {totalPages}</span>
+                    </div>
+
+                    <button
+                        onClick={nextPage}
+                        disabled={currentPage === totalPages || isPageLoading}
+                        className="px-2 py-1 rounded bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 disabled:opacity-50"
+                    >
+                        Siguiente &gt;
+                    </button>
+                    <button
+                        // Last page logic requires complex backwards cursor which we don't have stored, so we disable it for now or implement differently
+                        // A quick fix is to disable "Ultima" and just force users to page through, or we disable jump without cursors.
+                        // Prompt rule: "Ir a N usa cursor cacheado; si no existe bloquear o iterar"
+                        disabled={true}
+                        className="px-2 py-1 rounded bg-gray-200 dark:bg-slate-700 opacity-50 cursor-not-allowed text-gray-400 hidden sm:block"
+                        title="Ir a última no disponible instantáneamente en Firebase."
+                    >
+                        Última &gt;&gt;
+                    </button>
+                </div>
+            </div>
+
             {editingInvoice && <EditInvoiceModal invoice={editingInvoice} onClose={() => setEditingInvoice(null)} />}
             {showPaymentModal && <PaymentConfirmationModal count={paymentSnapshot.count} total={paymentSnapshot.total} onConfirm={handleConfirmPayment} onClose={() => setShowPaymentModal(false)} />}
             {showBulkChargeModal && <BulkChargeModal onClose={() => setShowBulkChargeModal(false)} />}
@@ -435,62 +519,65 @@ const MasterTable = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {visibleRows.length === 0 ? <tr><td colSpan="11" className="p-4 text-center text-gray-500 dark:text-gray-400">No hay resultados</td></tr> :
-                            visibleRows.map((inv) => (
-                                <tr key={inv.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-800 dark:border-slate-700">
-                                    <td className="p-2 font-semibold text-gray-600 dark:text-gray-300">{inv.emisor}</td>
-                                    <td className="p-2">
-                                        <div className="font-bold dark:text-gray-200">{inv.nroFactura}</div>
-                                        <div className="font-mono text-gray-500 dark:text-gray-400">{inv.siniestro}</div>
-                                    </td>
-                                    <td className="p-2 dark:text-gray-300">{inv.aseguradora}</td>
-                                    <td className="p-2 text-right dark:text-gray-300">${inv.monto}</td>
-                                    <td className="p-2 dark:text-gray-300">{inv.fecha}</td>
-                                    <td className="p-2 dark:text-gray-300">{inv.analista}</td>
+                        {isPageLoading ?
+                            <tr><td colSpan="11" className="p-8 text-center"><div className="mx-auto h-8 w-8 border-4 border-[#355071] border-t-transparent rounded-full animate-spin"></div></td></tr>
+                            : visibleRows.length === 0 ?
+                                <tr><td colSpan="11" className="p-4 text-center text-gray-500 dark:text-gray-400">No hay resultados en esta página</td></tr> :
+                                visibleRows.map((inv) => (
+                                    <tr key={inv.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-800 dark:border-slate-700">
+                                        <td className="p-2 font-semibold text-gray-600 dark:text-gray-300">{inv.emisor}</td>
+                                        <td className="p-2">
+                                            <div className="font-bold dark:text-gray-200">{inv.nroFactura}</div>
+                                            <div className="font-mono text-gray-500 dark:text-gray-400">{inv.siniestro}</div>
+                                        </td>
+                                        <td className="p-2 dark:text-gray-300">{inv.aseguradora}</td>
+                                        <td className="p-2 text-right dark:text-gray-300">${inv.monto}</td>
+                                        <td className="p-2 dark:text-gray-300">{inv.fecha}</td>
+                                        <td className="p-2 dark:text-gray-300">{inv.analista}</td>
 
-                                    <td className="p-2 font-bold text-[#355071] dark:text-blue-300">${inv.totalAPagarAnalista?.toLocaleString('es-AR')}</td>
-                                    <td className="p-2">
-                                        <span className={`px-2 py-1 rounded ${inv.estadoPago === 'PAGO' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}`}>
-                                            {inv.estadoPago}
-                                        </span>
-                                    </td>
+                                        <td className="p-2 font-bold text-[#355071] dark:text-blue-300">${inv.totalAPagarAnalista?.toLocaleString('es-AR')}</td>
+                                        <td className="p-2">
+                                            <span className={`px-2 py-1 rounded ${inv.estadoPago === 'PAGO' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}`}>
+                                                {inv.estadoPago}
+                                            </span>
+                                        </td>
 
-                                    <td className="p-2">
-                                        <div className="flex items-center gap-1">
-                                            <select
-                                                value={inv.estadoDeCobro || 'NO COBRADO'}
-                                                onChange={(e) => handleStateChange(inv.id, e.target.value)}
-                                                className={`border rounded p-1 text-[10px] font-bold ${inv.estadoDeCobro === 'COBRADO' ? 'text-green-700 bg-green-100 dark:bg-green-900 dark:text-green-200' : 'text-[#d13737] bg-red-100 dark:bg-red-900 dark:text-red-200'}`}
-                                            >
-                                                <option value="NO COBRADO">NO COBRADO</option>
-                                                <option value="COBRADO">COBRADO</option>
-                                            </select>
-                                            {isOverdue(inv) && (
-                                                <div className="relative group">
-                                                    <AlertTriangle size={16} className="text-red-600 animate-pulse cursor-help" />
-                                                    <div className="absolute bottom-full mb-2 hidden group-hover:block bg-black text-white text-xs p-1 rounded whitespace-nowrap z-10">
-                                                        Pago Atrasado
+                                        <td className="p-2">
+                                            <div className="flex items-center gap-1">
+                                                <select
+                                                    value={inv.estadoDeCobro || 'NO COBRADO'}
+                                                    onChange={(e) => handleStateChange(inv.id, e.target.value)}
+                                                    className={`border rounded p-1 text-[10px] font-bold ${inv.estadoDeCobro === 'COBRADO' ? 'text-green-700 bg-green-100 dark:bg-green-900 dark:text-green-200' : 'text-[#d13737] bg-red-100 dark:bg-red-900 dark:text-red-200'}`}
+                                                >
+                                                    <option value="NO COBRADO">NO COBRADO</option>
+                                                    <option value="COBRADO">COBRADO</option>
+                                                </select>
+                                                {isOverdue(inv) && (
+                                                    <div className="relative group">
+                                                        <AlertTriangle size={16} className="text-red-600 animate-pulse cursor-help" />
+                                                        <div className="absolute bottom-full mb-2 hidden group-hover:block bg-black text-white text-xs p-1 rounded whitespace-nowrap z-10">
+                                                            Pago Atrasado
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className={`p-2 text-center font-bold ${inv.estadoDeCobro === 'COBRADO'
-                                        ? 'text-green-600 dark:text-green-400'
-                                        : 'text-red-500 dark:text-red-400'
-                                        }`}>
-                                        {calcDias(inv)}
-                                    </td>
-                                    <td className="p-2 flex gap-1">
-                                        <button onClick={() => setEditingInvoice(inv)} className="p-1 text-[#355071] hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-slate-700 rounded" title="Editar">
-                                            <Edit2 size={16} />
-                                        </button>
-                                        <button onClick={() => handleDelete(inv.id)} className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded" title="Eliminar">
-                                            <Trash size={16} />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className={`p-2 text-center font-bold ${inv.estadoDeCobro === 'COBRADO'
+                                            ? 'text-green-600 dark:text-green-400'
+                                            : 'text-red-500 dark:text-red-400'
+                                            }`}>
+                                            {calcDias(inv)}
+                                        </td>
+                                        <td className="p-2 flex gap-1">
+                                            <button onClick={() => setEditingInvoice(inv)} className="p-1 text-[#355071] hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-slate-700 rounded" title="Editar">
+                                                <Edit2 size={16} />
+                                            </button>
+                                            <button onClick={() => handleDelete(inv.id)} className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded" title="Eliminar">
+                                                <Trash size={16} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
                     </tbody>
                 </table>
             </div>

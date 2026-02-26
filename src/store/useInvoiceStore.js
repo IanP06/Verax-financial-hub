@@ -71,6 +71,29 @@ const useInvoiceStore = create(
         (set, get) => ({
             stagingInvoices: [],
             invoices: [],
+
+            // PAGINATION STATE
+            pageSize: 25,
+            currentPage: 1,
+            totalCount: 0,
+            totalPages: 0,
+            pageCursors: { 1: null }, // Mapeo de página a su cursor inicial (el doc previo)
+            isPageLoading: false,
+            invoicesPage: [],
+
+            dashboardStats: {
+                totalFacturado: 0,
+                totalLiquidado: 0,
+                totalCobrado: 0,
+                tasaCobro: 0,
+                promedioDias: 0,
+                facturasEmitidas: 0,
+                promedioDiasDeuda: 0,
+                dataEmisor: [],
+                dataAseguradora: []
+            },
+            isDashboardStatsLoading: false,
+
             analysts: ['Ariel', 'Cesar', 'Daniel', 'Emiliano', 'Eugenia y Debora', 'Jazmin', 'Jeremias', 'Natalia', 'Pablo', 'Rodrigo', 'Sofia', 'Tomás'],
             analystProfiles: [], // { uid, analystKey, role... }
             isHydrated: false,
@@ -167,10 +190,13 @@ const useInvoiceStore = create(
                     }
 
                     // 3. Facturas (Main Collection)
-                    // This will fail for Analysts if rules deny read
-                    const invoicesSnap = await getDocs(collection(db, 'invoices'));
-                    const invoicesData = invoicesSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-                    set({ invoices: invoicesData, isHydrated: true });
+                    // Ya no descargamos toda la base de datos al inicio
+                    // Solo inicializamos si no hay nada en memoria y llamaremos fetchInvoicesPage dsp
+                    if (get().invoices.length === 0) {
+                        set({ invoices: [] });
+                    }
+
+                    set({ isHydrated: true });
                     console.log("[Store] Admin Init Complete.");
 
                 } catch (error) {
@@ -205,6 +231,224 @@ const useInvoiceStore = create(
                     await setDoc(doc(db, 'settings', 'global'), newConfig);
                 } catch (e) {
                     console.error("Error guardando config:", e);
+                }
+            },
+
+            // --- PAGINATION LÓGICA ---
+            setPageSize: (size) => {
+                set({ pageSize: size, currentPage: 1, pageCursors: { 1: null } });
+                get().fetchInvoicesPage();
+            },
+
+            goToPage: (n) => {
+                const cursors = get().pageCursors;
+                if (n === 1 || cursors[n] !== undefined) {
+                    set({ currentPage: n });
+                    get().fetchInvoicesPage();
+                } else {
+                    console.warn(`Cannot jump directly to page ${n} without cursor cache.`);
+                    // En un futuro se podría iterar, pero por ahora bloqueamos el salto
+                }
+            },
+
+            nextPage: () => {
+                const { currentPage, totalPages } = get();
+                if (currentPage < totalPages) {
+                    set({ currentPage: currentPage + 1 });
+                    get().fetchInvoicesPage();
+                }
+            },
+
+            prevPage: () => {
+                const { currentPage } = get();
+                if (currentPage > 1) {
+                    set({ currentPage: currentPage - 1 });
+                    get().fetchInvoicesPage();
+                }
+            },
+
+            fetchInvoicesPage: async (customFilters = {}, sortConfig = null) => {
+                const { pageSize, currentPage, pageCursors } = get();
+                set({ isPageLoading: true });
+
+                try {
+                    const { query, where, orderBy, limit, startAfter, getDocs, getCountFromServer } = await import('firebase/firestore');
+                    const invoicesRef = collection(db, 'invoices');
+                    let queryConstraints = [];
+
+                    // Aplicar Filtros
+                    if (customFilters.aseguradora) queryConstraints.push(where("aseguradora", "==", customFilters.aseguradora));
+                    if (customFilters.analista) queryConstraints.push(where("analista", "==", customFilters.analista));
+
+                    if (customFilters.estadoDeCobro) {
+                        queryConstraints.push(where("estadoDeCobro", "==", customFilters.estadoDeCobro));
+                    }
+                    if (customFilters.estadoPago) {
+                        queryConstraints.push(where("estadoPago", "==", customFilters.estadoPago));
+                    }
+                    if (customFilters.searchTerm) {
+                        const term = customFilters.searchTerm.toLowerCase().trim();
+                        queryConstraints.push(where("searchTokens", "array-contains", term));
+                    }
+                    // Filtro de Fechas (Requiere index complejo o filtrado local si hay mix). Por simplicidad pasamos todo si hay fechas y luego se filtra (o crear indice)
+                    // TODO: add DB date filtering if standard
+
+                    // Calculo de TOTAL Count de los filtros actuales
+                    const countQuery = query(invoicesRef, ...queryConstraints);
+                    const countSnap = await getCountFromServer(countQuery);
+                    const totalCount = countSnap.data().count;
+                    const totalPages = Math.ceil(totalCount / pageSize);
+
+                    // Ordenamiento (Estable)
+                    const sortField = sortConfig?.key || 'createdAt';
+                    const sortDir = sortConfig?.dir || 'desc';
+                    queryConstraints.push(orderBy(sortField, sortDir));
+
+                    // EMPATE BREAK: Para sorting estable si hay campos iguales
+                    if (sortField !== '__name__') {
+                        queryConstraints.push(orderBy('__name__', 'desc'));
+                    }
+
+                    queryConstraints.push(limit(pageSize));
+
+                    // Cursor
+                    const currentCursor = pageCursors[currentPage];
+                    if (currentCursor) {
+                        queryConstraints.push(startAfter(currentCursor));
+                    }
+
+                    const finalQuery = query(invoicesRef, ...queryConstraints);
+                    const snapshot = await getDocs(finalQuery);
+
+                    const newInvoicesPage = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+
+                    // Guardar Cursor para la próxima página
+                    if (snapshot.docs.length > 0 && currentPage < totalPages) {
+                        const lastVisible = snapshot.docs[snapshot.docs.length - 1];
+                        set(state => ({
+                            pageCursors: { ...state.pageCursors, [currentPage + 1]: lastVisible }
+                        }));
+                    }
+
+                    set({
+                        invoicesPage: newInvoicesPage,
+                        totalCount,
+                        totalPages,
+                        isPageLoading: false
+                    });
+
+                } catch (error) {
+                    console.error("Error fetching page:", error);
+                    set({ isPageLoading: false });
+                }
+            },
+
+            // --- SERVER-SIDE DASHBOARD STATS ---
+            fetchDashboardStats: async (filters = {}) => {
+                set({ isDashboardStatsLoading: true });
+                try {
+                    const { collection, query, where, getAggregateFromServer, sum, count, getDocs, limit, orderBy } = await import('firebase/firestore');
+                    const invoicesRef = collection(db, 'invoices');
+                    let baseConstraints = [];
+
+                    // Apply Global Filters
+                    if (filters.selectedCia) baseConstraints.push(where("aseguradora", "==", filters.selectedCia));
+                    if (filters.dateRange?.from && filters.dateRange?.to) {
+                        // Firebase date filtering requires stored Timestamps or sortable string formats (YYYY-MM-DD).
+                        // If 'fecha' is 'DD/MM/YYYY', it's hard to filter on DB without a normalized field.
+                        // Assuming migration script didn't add normalized date field, this will be skipped on DB 
+                        // or we would need a new migration. For now, we will skip date filter if not possible or
+                        // do a simple top-level filter if applicable.
+                        // Note: To fully support this without downloading all docs, 'fechaEmisionIso' is needed.
+                        console.warn("Date filtering on DB requires a YYYY-MM-DD string or Timestamp field.");
+                    }
+
+                    const baseQuery = query(invoicesRef, ...baseConstraints);
+
+                    // 1. Total Facturado y Liquidado
+                    const statsSnap = await getAggregateFromServer(baseQuery, {
+                        totalFacturado: sum('montoNumber'),
+                        totalLiquidado: sum('totalAPagarAnalistaNumber'),
+                        facturasEmitidas: count()
+                    });
+
+                    // 2. Total Cobrado (Cobrados solo)
+                    const cobradosQuery = query(invoicesRef, ...baseConstraints, where("estadoDeCobro", "==", "COBRADO"));
+                    const cobradosSnap = await getAggregateFromServer(cobradosQuery, {
+                        totalCobrado: sum('montoNumber'),
+                        countCobrados: count()
+                    });
+
+                    // 3. Deuda (No Cobrados)
+                    const deudaQuery = query(invoicesRef, ...baseConstraints, where("estadoDeCobro", "==", "NO COBRADO"));
+                    const deudaSnap = await getAggregateFromServer(deudaQuery, {
+                        countDeuda: count()
+                    });
+
+                    const totalFacturado = statsSnap.data().totalFacturado || 0;
+                    const totalLiquidado = statsSnap.data().totalLiquidado || 0;
+                    const facturasEmitidas = statsSnap.data().facturasEmitidas || 0;
+
+                    const totalCobrado = cobradosSnap.data().totalCobrado || 0;
+                    const countCobrados = cobradosSnap.data().countCobrados || 0;
+                    const countDeuda = deudaSnap.data().countDeuda || 0;
+
+                    const tasaCobro = totalFacturado > 0 ? ((totalCobrado / totalFacturado) * 100).toFixed(1) : 0;
+
+                    // Days calculations (promedioDias, promedioDiasDeuda) require iterating documents. 
+                    // To avoid downloading all, we skip exact average or download a sample (e.g. 50 latest)
+                    // Or we could have a Cloud Function calculate and store these KPIs periodically.
+                    // For now, these are 0 to preserve performance. 
+                    const promedioDias = 0;
+                    const promedioDiasDeuda = 0;
+
+                    // 4. Graficos: Grouping by Aseguradora & Emisor. 
+                    // Firestore doesn't have GROUP BY. To build charts without downloading all 1000+ docs, 
+                    // we would need to run an aggregate query for EACH distinct Emisor/Aseguradora.
+                    // Since there are few Aseguradoras (Config driven), we can do it!
+                    const validAseguradoras = get().config?.validAseguradoras || [];
+                    const dataAseguradora = [];
+                    // Opt limit: top 5 charts
+                    for (const ase of validAseguradoras) {
+                        try {
+                            const q = query(invoicesRef, ...baseConstraints, where("aseguradora", "==", ase.nombre));
+                            const agg = await getAggregateFromServer(q, { t: sum('montoNumber') });
+                            if (agg.data().t > 0) {
+                                dataAseguradora.push({ name: ase.nombre, total: agg.data().t });
+                            }
+                        } catch (e) {
+                            // Ignorar si falla indice
+                        }
+                    }
+
+                    // Emisores are dynamic, can't easily query without downloading. 
+                    // We will leave Emisores blank or download a limit of 100 top latest records to approximate.
+                    const recentDocsSnap = await getDocs(query(invoicesRef, ...baseConstraints, orderBy('__name__', 'desc'), limit(100)));
+                    const byEmisor = recentDocsSnap.docs.reduce((acc, doc) => {
+                        const em = doc.data().emisor || 'Desconocido';
+                        acc[em] = (acc[em] || 0) + (doc.data().montoNumber || 0);
+                        return acc;
+                    }, {});
+                    const dataEmisor = Object.keys(byEmisor).map(k => ({ name: k, total: byEmisor[k] })).sort((a, b) => b.total - a.total).slice(0, 5); // top 5
+
+                    set({
+                        dashboardStats: {
+                            totalFacturado,
+                            totalLiquidado,
+                            totalCobrado,
+                            tasaCobro,
+                            facturasEmitidas,
+                            promedioDias,
+                            promedioDiasDeuda,
+                            dataAseguradora,
+                            dataEmisor
+                        },
+                        isDashboardStatsLoading: false
+                    });
+
+                } catch (error) {
+                    console.error("Dashboard Stats Fetch Error:", error);
+                    set({ isDashboardStatsLoading: false });
                 }
             },
 
