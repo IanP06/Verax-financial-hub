@@ -87,7 +87,7 @@ const Dashboard = () => {
                 </div>
                 <div className="bg-white dark:bg-slate-900 dark:border dark:border-slate-700 p-4 rounded shadow border-l-4 border-[#1d2e3f] dark:border-l-slate-400">
                     <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Facturas Emitidas</p>
-                    <p className="text-2xl font-bold text-[#1d2e3f] dark:text-slate-200">{filteredInvoices.length}</p>
+                    <p className="text-2xl font-bold text-[#1d2e3f] dark:text-slate-200">{facturasEmitidas}</p>
                 </div>
                 <div className="bg-white dark:bg-slate-900 dark:border dark:border-slate-700 p-4 rounded shadow border-l-4 border-red-500 dark:border-l-red-400">
                     <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Días Prom. Deuda</p>
