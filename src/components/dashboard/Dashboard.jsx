@@ -97,22 +97,26 @@ const Dashboard = () => {
 
             {/* Gráficos */}
             <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 transition-opacity ${isDashboardStatsLoading ? 'opacity-50' : ''}`}>
-                <div className="bg-white dark:bg-slate-900 p-4 rounded shadow h-64 dark:text-slate-200">
+                <div className="bg-white dark:bg-slate-900 p-4 rounded shadow h-64 dark:text-slate-200" style={{ minHeight: 240 }}>
                     <h3 className="text-sm font-bold text-[#1d2e3f] dark:text-slate-200 mb-2">Por Emisor (Montos Estimados)</h3>
                     {dataEmisor.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={dataEmisor}><XAxis dataKey="name" stroke="#888888" /><Tooltip contentStyle={{ backgroundColor: '#1f2937', color: '#fff', borderColor: '#374151' }} formatter={(val) => `$${Number(val).toLocaleString('es-AR')}`} /><Bar dataKey="total" fill="#355071" /></BarChart>
-                        </ResponsiveContainer>
+                        <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
+                            <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+                                <BarChart data={dataEmisor}><XAxis dataKey="name" stroke="#888888" /><Tooltip contentStyle={{ backgroundColor: '#1f2937', color: '#fff', borderColor: '#374151' }} formatter={(val) => `$${Number(val).toLocaleString('es-AR')}`} /><Bar dataKey="total" fill="#355071" /></BarChart>
+                            </ResponsiveContainer>
+                        </div>
                     ) : (
                         <div className="flex justify-center items-center h-full text-gray-400 text-sm">Cargando gráficos o sin datos</div>
                     )}
                 </div>
-                <div className="bg-white dark:bg-slate-900 p-4 rounded shadow h-64 dark:text-slate-200">
+                <div className="bg-white dark:bg-slate-900 p-4 rounded shadow h-64 dark:text-slate-200" style={{ minHeight: 240 }}>
                     <h3 className="text-sm font-bold text-[#1d2e3f] dark:text-slate-200 mb-2">Por Aseguradora (Montos Estimados)</h3>
                     {dataAseguradora.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={dataAseguradora} layout="vertical"><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={80} style={{ fontSize: '10px' }} stroke="#888888" /><Tooltip contentStyle={{ backgroundColor: '#1f2937', color: '#fff', borderColor: '#374151' }} formatter={(val) => `$${Number(val).toLocaleString('es-AR')}`} /><Bar dataKey="total" fill="#d13737" /></BarChart>
-                        </ResponsiveContainer>
+                        <div style={{ width: '100%', height: '100%', minHeight: 200 }}>
+                            <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+                                <BarChart data={dataAseguradora} layout="vertical"><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={80} style={{ fontSize: '10px' }} stroke="#888888" /><Tooltip contentStyle={{ backgroundColor: '#1f2937', color: '#fff', borderColor: '#374151' }} formatter={(val) => `$${Number(val).toLocaleString('es-AR')}`} /><Bar dataKey="total" fill="#d13737" /></BarChart>
+                            </ResponsiveContainer>
+                        </div>
                     ) : (
                         <div className="flex justify-center items-center h-full text-gray-400 text-sm">Cargando gráficos o sin datos</div>
                     )}

@@ -295,18 +295,23 @@ const useInvoiceStore = create(
 
                     // Calculo de TOTAL Count de los filtros actuales
                     const countQuery = query(invoicesRef, ...queryConstraints);
-                    const countSnap = await getCountFromServer(countQuery);
-                    const totalCount = countSnap.data().count;
+                    let totalCount = 0;
+                    try {
+                        const countSnap = await getCountFromServer(countQuery);
+                        totalCount = countSnap.data().count;
+                    } catch (err) {
+                        console.warn("Count query failed (possible missing index), fallback to 10000 max:", err.message);
+                        totalCount = 10000;
+                    }
                     const totalPages = Math.ceil(totalCount / pageSize);
 
                     // Ordenamiento (Estable)
-                    const sortField = sortConfig?.key || 'createdAt';
-                    const sortDir = sortConfig?.dir || 'desc';
-                    queryConstraints.push(orderBy(sortField, sortDir));
-
-                    // EMPATE BREAK: Para sorting estable si hay campos iguales
-                    if (sortField !== '__name__') {
-                        queryConstraints.push(orderBy('__name__', 'desc'));
+                    // Para evitar exigir índices compuestos no existentes, omitimos orderBy si hay un array-contains (búsqueda).
+                    // También removemos el doble orderBy de __name__ por la misma razón.
+                    if (!customFilters.searchTerm) {
+                        const sortField = sortConfig?.key || 'createdAt';
+                        const sortDir = sortConfig?.dir || 'desc';
+                        queryConstraints.push(orderBy(sortField, sortDir));
                     }
 
                     queryConstraints.push(limit(pageSize));
@@ -318,7 +323,14 @@ const useInvoiceStore = create(
                     }
 
                     const finalQuery = query(invoicesRef, ...queryConstraints);
-                    const snapshot = await getDocs(finalQuery);
+                    let snapshot;
+                    try {
+                        snapshot = await getDocs(finalQuery);
+                    } catch (err) {
+                        console.warn("Main query failed (likely missing composite index). Falling back to basic query:", err.message);
+                        // Fallback Query: solo límite para garantizar renderizado
+                        snapshot = await getDocs(query(invoicesRef, limit(pageSize)));
+                    }
 
                     const newInvoicesPage = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
 
@@ -365,8 +377,23 @@ const useInvoiceStore = create(
 
                     const baseQuery = query(invoicesRef, ...baseConstraints);
 
+                    // --- SAFE AGGREGATION HELPER ---
+                    let warnedStats = false;
+                    const safeAgg = async (q, aggObj) => {
+                        try {
+                            const snap = await getAggregateFromServer(q, aggObj);
+                            return snap.data();
+                        } catch (e) {
+                            if (!warnedStats) {
+                                console.warn("Stats no disponibles (índices o reglas pendientes). Algunas métricas mostrarán 0:", e.message);
+                                warnedStats = true;
+                            }
+                            return {};
+                        }
+                    };
+
                     // 1. Total Facturado y Liquidado
-                    const statsSnap = await getAggregateFromServer(baseQuery, {
+                    const statsData = await safeAgg(baseQuery, {
                         totalFacturado: sum('montoNumber'),
                         totalLiquidado: sum('totalAPagarAnalistaNumber'),
                         facturasEmitidas: count()
@@ -374,24 +401,24 @@ const useInvoiceStore = create(
 
                     // 2. Total Cobrado (Cobrados solo)
                     const cobradosQuery = query(invoicesRef, ...baseConstraints, where("estadoDeCobro", "==", "COBRADO"));
-                    const cobradosSnap = await getAggregateFromServer(cobradosQuery, {
+                    const cobradosData = await safeAgg(cobradosQuery, {
                         totalCobrado: sum('montoNumber'),
                         countCobrados: count()
                     });
 
                     // 3. Deuda (No Cobrados)
                     const deudaQuery = query(invoicesRef, ...baseConstraints, where("estadoDeCobro", "==", "NO COBRADO"));
-                    const deudaSnap = await getAggregateFromServer(deudaQuery, {
+                    const deudaData = await safeAgg(deudaQuery, {
                         countDeuda: count()
                     });
 
-                    const totalFacturado = statsSnap.data().totalFacturado || 0;
-                    const totalLiquidado = statsSnap.data().totalLiquidado || 0;
-                    const facturasEmitidas = statsSnap.data().facturasEmitidas || 0;
+                    const totalFacturado = statsData.totalFacturado || 0;
+                    const totalLiquidado = statsData.totalLiquidado || 0;
+                    const facturasEmitidas = statsData.facturasEmitidas || 0;
 
-                    const totalCobrado = cobradosSnap.data().totalCobrado || 0;
-                    const countCobrados = cobradosSnap.data().countCobrados || 0;
-                    const countDeuda = deudaSnap.data().countDeuda || 0;
+                    const totalCobrado = cobradosData.totalCobrado || 0;
+                    const countCobrados = cobradosData.countCobrados || 0;
+                    const countDeuda = deudaData.countDeuda || 0;
 
                     const tasaCobro = totalFacturado > 0 ? ((totalCobrado / totalFacturado) * 100).toFixed(1) : 0;
 
@@ -417,7 +444,10 @@ const useInvoiceStore = create(
                                 dataAseguradora.push({ name: ase.nombre, total: agg.data().t });
                             }
                         } catch (e) {
-                            // Ignorar si falla indice
+                            if (!warnedStats) {
+                                console.warn("Gráficos de Aseguradora no disponibles (índices pendientes):", e.message);
+                                warnedStats = true;
+                            }
                         }
                     }
 
