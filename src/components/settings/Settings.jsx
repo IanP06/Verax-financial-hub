@@ -3,7 +3,7 @@ import { Trash, Plus, User, Settings as SettingsIcon, Save, Clock } from 'lucide
 import useInvoiceStore from '../../store/useInvoiceStore';
 
 const Settings = () => {
-    const { analysts, addAnalyst, removeAnalyst, config, updateConfig } = useInvoiceStore();
+    const { analysts, config, updateConfig } = useInvoiceStore();
     const [newAnalyst, setNewAnalyst] = useState('');
     const [localConfig, setLocalConfig] = useState(null);
 
@@ -19,8 +19,15 @@ const Settings = () => {
     };
 
     const handleAddAnalyst = () => {
-        if (newAnalyst.trim()) {
-            addAnalyst(newAnalyst.trim());
+        const name = newAnalyst.trim();
+        if (name) {
+            // Check if already exists in rules
+            if (!localConfig.analystRules?.some(r => r.name === name)) {
+                setLocalConfig(prev => ({
+                    ...prev,
+                    analystRules: [...(prev.analystRules || []), { name, pct: 30, mode: 'EDITABLE', requiresInvoice: false, isActive: true }]
+                }));
+            }
             setNewAnalyst('');
         }
     };
@@ -362,19 +369,7 @@ const Settings = () => {
                     </table>
                 </div>
 
-                <div className="mt-6 grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {analysts.map((name) => (
-                        <div key={name} className="flex justify-between items-center p-2 bg-gray-50 dark:bg-slate-800 rounded border dark:border-slate-600 text-sm">
-                            <span className="font-medium text-[#1d2e3f] dark:text-slate-200 truncate">{name}</span>
-                            <button
-                                onClick={() => removeAnalyst(name)}
-                                className="text-[#d13737] hover:bg-red-50 dark:hover:bg-red-900 p-1 rounded"
-                            >
-                                <Trash size={16} />
-                            </button>
-                        </div>
-                    ))}
-                </div>
+                {/* La lista separada de analistas fue eliminada; ahora se centraliza en la tabla de reglas de arriba. */}
             </section>
 
             <div className="fixed bottom-6 right-6">

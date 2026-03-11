@@ -71,7 +71,7 @@ const useInvoiceStore = create(
         (set, get) => ({
             stagingInvoices: [],
             invoices: [],
-            analysts: ['Ariel', 'Cesar', 'Daniel', 'Emiliano', 'Eugenia y Debora', 'Jazmin', 'Jeremias', 'Natalia', 'Pablo', 'Rodrigo', 'Sofia', 'Tomás'],
+            analysts: [], // Hydrated from settings/analystRules
             analystProfiles: [], // { uid, analystKey, role... }
             isHydrated: false,
             config: {
@@ -116,37 +116,63 @@ const useInvoiceStore = create(
                     // Let's try to fetch both or assume root collection 'analystRules' or specific doc.
                     // Usage in `StagingTable` implies it expects an array in `config.analystRules`.
 
+                    // 1 & 2. Cargar UserProfiles y Settings globales
+                    let profiles = [];
+                    try {
+                        const profilesSnap = await getDocs(collection(db, 'userProfiles'));
+                        profiles = profilesSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
+                        set({ analystProfiles: profiles });
+                    } catch (err) {
+                        console.warn("[Store] Profiles load failed:", err);
+                    }
+
                     try {
                         const settingsSnap = await getDoc(settingsRef);
                         const globalConfig = settingsSnap.exists() ? settingsSnap.data() : {};
 
-                        // Fetch Analyst Rules
-                        // Try root collection 'analystRules' first or subcollection 'settings/global/analystRules'?
-                        // Most likely it is a separate collection 'analystRules' based on typical firebase patterns I've seen in this codebase,
-                        // OR it's a field in 'settings/global'?
-                        // Prompt says: "settings/analystRules". This usually means path "settings/analystRules".
-                        // So text "settings/analystRules" is the Document Reference? Or Collection Reference?
-                        // If it's a doc path, it's `doc(db, 'settings', 'analystRules')`.
-                        // If it contains rules for many analysts, it might be a Map or Array inside that doc.
-
                         let rulesArray = [];
+                        let rulesDocRef = doc(db, 'settings', 'analystRules');
                         try {
-                            const rulesSnap = await getDoc(doc(db, 'settings', 'analystRules'));
+                            const rulesSnap = await getDoc(rulesDocRef);
                             if (rulesSnap.exists()) {
-                                // If it's a doc with keys as analyst names or a 'rules' field
                                 const data = rulesSnap.data();
-                                // Assume it might have a 'list' or keys are names.
-                                // Let's try to parse: if data has 'rules' array, use it.
-                                if (Array.isArray(data.rules)) {
-                                    rulesArray = data.rules;
-                                } else {
-                                    // Map object to array
-                                    rulesArray = Object.keys(data).map(key => ({ name: key, ...data[key] }));
-                                }
+                                rulesArray = Array.isArray(data.rules) ? data.rules : (data.analystRules || []);
                             }
                         } catch (e) { console.warn("Rules fetch error:", e); }
 
+                        // --- AUTO SYNC LOGIC ---
+                        // Find active analysts from profiles (role: 'analyst', isActive: true)
+                        const activeAnalystProfiles = profiles.filter(p => p.role === 'analyst' && p.isActive !== false);
+                        let rulesChanged = false;
+
+                        // Add missing rules
+                        activeAnalystProfiles.forEach(p => {
+                            if (p.analystKey && !rulesArray.some(r => r.name === p.analystKey)) {
+                                rulesArray.push({
+                                    name: p.analystKey,
+                                    pct: 30, // Default percentage
+                                    mode: 'EDITABLE', // Default mode
+                                    requiresInvoice: false,
+                                    isActive: true
+                                });
+                                rulesChanged = true;
+                                console.log(`[Store] Auto-created rule for new analyst: ${p.analystKey}`);
+                            }
+                        });
+
+                        if (rulesChanged) {
+                            try {
+                                await setDoc(rulesDocRef, { rules: rulesArray }, { merge: true });
+                            } catch (e) {
+                                console.warn("[Store] Failed to auto-sync rules to Firestore:", e);
+                            }
+                        }
+
+                        // Extract just the names for the dropdowns (analysts array)
+                        const activeNames = rulesArray.filter(r => r.isActive !== false).map(r => r.name).sort();
+
                         set({
+                            analysts: activeNames,
                             config: {
                                 ...get().config,
                                 ...globalConfig,
@@ -155,15 +181,6 @@ const useInvoiceStore = create(
                         });
                     } catch (err) {
                         console.warn("[Store] Settings load failed:", err);
-                    }
-
-                    // 2. Cargar UserProfiles
-                    try {
-                        const profilesSnap = await getDocs(collection(db, 'userProfiles'));
-                        const profiles = profilesSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
-                        set({ analystProfiles: profiles });
-                    } catch (err) {
-                        console.warn("[Store] Profiles load failed:", err);
                     }
 
                     // 3. Facturas (Main Collection)
@@ -194,15 +211,48 @@ const useInvoiceStore = create(
                     if (settingsSnap.exists()) {
                         set({ config: { ...get().config, ...settingsSnap.data() } });
                     }
-                } catch (e) { console.warn("Analyst cannot read global settings"); }
+
+                    // Analysts also might need the dropdown if they use Staging. 
+                    const rulesSnap = await getDoc(doc(db, 'settings', 'analystRules'));
+                    if (rulesSnap.exists()) {
+                        const data = rulesSnap.data();
+                        const rulesArray = Array.isArray(data.rules) ? data.rules : (data.analystRules || []);
+                        const activeNames = rulesArray.filter(r => r.isActive !== false).map(r => r.name).sort();
+                        set(state => ({
+                            analysts: activeNames,
+                            config: { ...state.config, analystRules: rulesArray }
+                        }));
+                    }
+                } catch (e) { console.warn("Analyst cannot read global settings or rules"); }
 
                 set({ isHydrated: true });
             },
 
             updateConfig: async (newConfig) => {
                 set({ config: newConfig });
+
+                // Extract analystRules and global config separately
+                const { analystRules, ...globalConfig } = newConfig;
+
                 try {
-                    await setDoc(doc(db, 'settings', 'global'), newConfig);
+                    const batch = writeBatch(db);
+
+                    // Save global settings
+                    batch.set(doc(db, 'settings', 'global'), globalConfig);
+
+                    // Save analyst rules separately if they exist
+                    if (analystRules) {
+                        batch.set(doc(db, 'settings', 'analystRules'), { rules: analystRules });
+                    }
+
+                    await batch.commit();
+
+                    // Update the analysts array for the dropdowns based on the new rules
+                    if (analystRules) {
+                        const activeNames = analystRules.filter(r => r.isActive !== false).map(r => r.name).sort();
+                        set({ analysts: activeNames });
+                    }
+
                 } catch (e) {
                     console.error("Error guardando config:", e);
                 }
@@ -680,8 +730,6 @@ const useInvoiceStore = create(
                 }
             },
 
-            addAnalyst: (name) => set((state) => ({ analysts: [...state.analysts, name] })),
-            removeAnalyst: (name) => set((state) => ({ analysts: state.analysts.filter(a => a !== name) })),
         }),
         {
             name: 'verax-storage',
