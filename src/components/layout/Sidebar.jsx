@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, UploadCloud, FileSpreadsheet, Settings, DollarSign, LogOut, FileText } from 'lucide-react';
+import { LayoutDashboard, UploadCloud, FileSpreadsheet, Settings, DollarSign, LogOut, FileText, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const Sidebar = ({ theme, toggleTheme }) => {
@@ -57,6 +57,11 @@ const Sidebar = ({ theme, toggleTheme }) => {
                         <NavLink to="/payouts" className={linkClasses}>
                             <DollarSign size={20} />
                             <span className="font-medium">Solicitudes Pago</span>
+                        </NavLink>
+
+                        <NavLink to="/analyst-availability" className={linkClasses}>
+                            <Users size={20} />
+                            <span className="font-medium">Monto por Analista</span>
                         </NavLink>
                     </>
                 )}

@@ -11,6 +11,7 @@ import AnalystLayout from './components/analyst/AnalystLayout';
 import AnalystDashboard from './components/analyst/AnalystDashboard';
 import AnalystPayoutRequests from './components/analyst/AnalystPayoutRequests'; // [NEW IMPORT]
 import PayoutRequests from './components/admin/PayoutRequests';
+import AnalystAvailability from './components/admin/AnalystAvailability'; // [NEW IMPORT]
 import { AuthProvider } from './context/AuthContext';
 import useInvoiceStore from './store/useInvoiceStore';
 import { applyTheme, getInitialTheme } from "./utils/theme";
@@ -81,6 +82,7 @@ function App() {
             <Route path="/staging" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><StagingTable /></AdminLayout>} />
             <Route path="/dashboard" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><Dashboard /></AdminLayout>} />
             <Route path="/payouts" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><PayoutRequests /></AdminLayout>} />
+            <Route path="/analyst-availability" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><AnalystAvailability /></AdminLayout>} />
             <Route path="/settings" element={<AdminLayout theme={theme} toggleTheme={toggleTheme}><Settings /></AdminLayout>} />
           </Route>
 
