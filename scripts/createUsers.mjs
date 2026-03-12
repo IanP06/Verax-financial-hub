@@ -19,6 +19,7 @@ const ANALYSTS = [
     { email: "gb.asaavedra@gmail.com", name: "Ayelen" },
 	{ email: "inspectorekanizsa@gmail.com", name: "Ezequiel" },
 	{ email: "edusolis789@gmail.com", name: "Eduardo" },
+	{ email: "Antonelamedina00@gmail.com", name: "Antonela" },
 	{ email: "luishguilledo@gmail.com", name: "Luis" }
 ];
 
