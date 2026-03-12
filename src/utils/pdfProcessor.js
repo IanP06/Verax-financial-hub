@@ -25,191 +25,36 @@ const normalizeToken = (str) => {
     return str.replace(/[^A-Z0-9]/gi, '').toUpperCase();
 };
 
-// --- OCR HELPERS ---
-
-export const extractInvoiceNumber = (fileName, text) => {
+export const parseInvoicePDF = async (file, { companiesSeeds = [], emittersSeeds = [] } = {}) => {
+    // 1. ESTRATEGIA NOMBRE DE ARCHIVO
     let nroFactura = "S/N";
-    
-    // 1. Trying to extract from filename (legacy behavior + AFIP format fix)
     try {
-        if (fileName) {
-            const nameParts = fileName.split('_');
-            const lastPart = nameParts[nameParts.length - 1]; // e.g. 00000916.pdf or 00003-00001167.pdf
-            const cleanNumStr = lastPart.toLowerCase().replace('.pdf', '');
-            
-            // Handle AFIP format: 00003-00001167 -> 1167
-            if (cleanNumStr.includes('-')) {
-                const parts = cleanNumStr.split('-');
-                nroFactura = String(parseInt(parts[1], 10));
-            } else {
-                nroFactura = String(parseInt(cleanNumStr, 10));
-            }
-            
-            if (!isNaN(nroFactura) && nroFactura !== "NaN") {
-                return nroFactura;
-            } else {
-                nroFactura = "S/N";
-            }
-        }
+        const nameParts = file.name.split('_');
+        const lastPart = nameParts[nameParts.length - 1]; // 00000916.pdf
+        const cleanNum = lastPart.toLowerCase().replace('.pdf', '');
+        nroFactura = String(parseInt(cleanNum, 10));
     } catch (e) {
         console.warn("No se pudo extraer factura del nombre del archivo", e);
     }
-    
-    // 2. Fallback to extracting from text could go here if needed in the future
-    return nroFactura;
-};
-
-export const extractNetAmount = (cleanText) => {
-    let monto = "0.00";
-    let amountSource = "None";
-
-    // Helper to clean and parse generic Argentine amount formats (e.g. 40000,00 -> 40000)
-    const parseAmountRegex = (regex) => {
-        const matches = cleanText.match(regex);
-        if (matches) {
-            // Find the last valid amount that is not 0.00 or 0,00
-            for (let i = matches.length - 1; i >= 0; i--) {
-                const val = matches[i].replace(/[A-Za-z:\s]/g, '').trim();
-                const num = parseFloat(val.replace(/\./g, '').replace(',', '.'));
-                if (!isNaN(num) && num > 0) {
-                    return val;
-                }
-            }
-        }
-        return null;
-    };
-
-    // 1. Target "Importe Neto Gravado" directly
-    const netoGravadoMatch = parseAmountRegex(/Importe\s+Neto\s+Gravado.*?(\d+(?:[.,]\d{3})*[.,]\d{2})/ig);
-    if (netoGravadoMatch) {
-       monto = netoGravadoMatch;
-       amountSource = "Neto Gravado";
-    } else {
-        // 2. Target "Subtotal" directly
-        const subtotalMatch = parseAmountRegex(/Subtotal.*?(\d+(?:[.,]\d{3})*[.,]\d{2})/ig);
-        if (subtotalMatch) {
-            monto = subtotalMatch;
-            amountSource = "Subtotal";
-        } else {
-            // 3. Target "Importe Total" directly
-            const totalMatch = parseAmountRegex(/Importe\s+Total.*?(\d+(?:[.,]\d{3})*[.,]\d{2})/ig);
-            if (totalMatch) {
-                monto = totalMatch;
-                amountSource = "Importe Total";
-            } else {
-                 // 4. Ultimate fallback: just pick the last non-zero money amount in the document
-                 const genericMatches = cleanText.match(/(\d+(?:[.,]\d{3})*[.,]\d{2})/g);
-                 if (genericMatches) {
-                     for (let i = genericMatches.length - 1; i >= 0; i--) {
-                         const num = parseFloat(genericMatches[i].replace(/\./g, '').replace(',', '.'));
-                         if (!isNaN(num) && num > 0) {
-                             monto = genericMatches[i];
-                             amountSource = "Generic Match";
-                             break;
-                         }
-                     }
-                 }
-            }
-        }
-    }
-
-    return { monto, amountSource };
-};
-
-export const extractPrimaryConcept = (cleanText) => {
-    let rawConcept = "PENDIENTE";
-    let isGestionStro = false;
-    let isAhorroStro = false;
-
-    // 1. Look for PLUS POR AHORRO STRO
-    const ahorroMatch = cleanText.match(/PLUS\s+POR\s+AHORRO.*?STRO\s*(\d+)\s*-\s*(\d+)/i);
-    if (ahorroMatch) {
-        rawConcept = ahorroMatch[0].trim();
-        isAhorroStro = true;
-        return { rawConcept, isGestionStro, isAhorroStro, siniestroParts: [ahorroMatch[1], ahorroMatch[2]] };
-    }
-
-    // 2. Look for GESTION STRO
-    const gestionMatch = cleanText.match(/GESTION\s*STRO.*?(\d+)\s*-\s*(\d+)/i);
-    // Be careful not to match dates accidentally. The \d+ - \d+ makes it safe enough.
-    if (gestionMatch) {
-        rawConcept = gestionMatch[0].trim();
-        isGestionStro = true;
-        return { rawConcept, isGestionStro, isAhorroStro, siniestroParts: [gestionMatch[1], gestionMatch[2]] };
-    }
-    
-    // Fallback logic for siniestro
-    const legacySiniestroMatch = cleanText.match(/GESTION\s*STRO.*?(\d{4}\s*-\s*\d+)/i);
-    if (legacySiniestroMatch) {
-        rawConcept = legacySiniestroMatch[0].trim();
-        isGestionStro = true;
-        // Parse parts manually
-        const parts = legacySiniestroMatch[1].split('-');
-        if(parts.length >= 2) {
-             return { rawConcept, isGestionStro, isAhorroStro, siniestroParts: [parts[0].trim(), parts[1].trim()] };
-        }
-    }
-
-    return { rawConcept, isGestionStro, isAhorroStro, siniestroParts: null };
-};
-
-export const normalizeBusinessConcept = (primaryConceptData) => {
-    const { rawConcept, isGestionStro, isAhorroStro, siniestroParts } = primaryConceptData;
-
-    if (rawConcept === "PENDIENTE") {
-        return rawConcept;
-    }
-
-    if (isAhorroStro && siniestroParts) {
-         // "PLUS POR AHORRO STRO 3819 - 2432831" -> "AHORRO 3819-2432831"
-        return `AHORRO ${siniestroParts[0]}-${siniestroParts[1]}`;
-    }
-
-    if (isGestionStro && siniestroParts) {
-        // "GESTION STRO 3876 - 130021" -> "3876-130021"
-         return `${siniestroParts[0]}-${siniestroParts[1]}`;
-    }
-
-    return rawConcept || "PENDIENTE";
-};
-
-// -------------------
-
-export const parseInvoicePDF = async (file, { companiesSeeds = [], emittersSeeds = [] } = {}) => {
-    // 1. ESTRATEGIA NOMBRE DE ARCHIVO
-    let nroFactura = extractInvoiceNumber(file?.name || "", "");
 
     // 2. LECTURA DEL PDF
-    let arrayBuffer;
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await getDocument(arrayBuffer).promise;
     let fullText = '';
-    
-    // For test environments, file might be a mock object without arrayBuffer
-    if (file && typeof file.arrayBuffer === 'function') {
-        arrayBuffer = await file.arrayBuffer();
-        const pdf = await getDocument(arrayBuffer).promise;
-        
-        for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            fullText += textContent.items.map(item => item.str).join('§') + '§';
-        }
-    } else if (file && file.mockText) {
-        fullText = file.mockText;
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        fullText += textContent.items.map(item => item.str).join('§') + '§';
     }
 
     const cleanText = fullText.replace(/§/g, ' ').replace(/\s+/g, ' ');
     const normalizedText = normalizeToken(cleanText);
 
-    // 3. Siniestro / Concepto (Logic replaced by helpers)
-    const primaryConceptData = extractPrimaryConcept(cleanText);
-    const siniestro = normalizeBusinessConcept(primaryConceptData);
-
-    // Temp Dev Logs
-    if (import.meta.env?.DEV || process.env.NODE_ENV !== 'production') {
-        console.log("[OCR] extracted invoice number:", nroFactura);
-        console.log("[OCR] extracted raw concept:", primaryConceptData.rawConcept);
-        console.log("[OCR] normalized concept:", siniestro);
-    }
+    // 3. Siniestro (Limpieza agresiva)
+    const siniestroMatch = cleanText.match(/GESTION\s*STRO.*?(\d{4}\s*-\s*\d+)/i);
+    let siniestro = siniestroMatch ? siniestroMatch[1].replace(/\s/g, '') : "PENDIENTE";
+    if (siniestro.endsWith("1") && siniestro.length > 9) siniestro = siniestro.slice(0, -1);
 
     // 4. Aseguradora (Dynamic Seeds w/ Normalization)
     let aseguradora = "OTRA";
@@ -271,12 +116,9 @@ export const parseInvoicePDF = async (file, { companiesSeeds = [], emittersSeeds
     }
 
     // 6. Monto
-    const { monto, amountSource } = extractNetAmount(cleanText);
-    
-    if (import.meta.env?.DEV || process.env.NODE_ENV !== 'production') {
-        console.log("[OCR] extracted net amount:", monto);
-        console.log("[OCR] amount source used:", amountSource);
-    }
+    const montoMatches = cleanText.match(/(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})/g);
+    let monto = "0.00";
+    if (montoMatches) monto = montoMatches[montoMatches.length - 1];
 
     // 7. Fecha
     const fechaMatch = cleanText.match(/(\d{2}\/\d{2}\/\d{4})/);
@@ -284,10 +126,9 @@ export const parseInvoicePDF = async (file, { companiesSeeds = [], emittersSeeds
 
     // 8. PLUS POR AHORRO
     let plusPorAhorro = 0;
-    const plusMatch = cleanText.match(/PLUS POR AHORRO.*?(\d+(?:[.,]\d{3})*[.,]\d{2})/i);
-    // Legacy mapping variable for plusPorAhorro, could be extracted but keeping exact logic
+    const plusMatch = cleanText.match(/PLUS POR AHORRO.*?(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})/i);
     if (plusMatch) {
-         let rawPlus = plusMatch[1];
+        let rawPlus = plusMatch[1];
         let normalized = rawPlus.replace(/\./g, '').replace(',', '.');
         plusPorAhorro = parseFloat(normalized) || 0;
     }
