@@ -1,66 +1,79 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import useInvoiceStore from '../../store/useInvoiceStore';
 import { normalizeInvoiceForAnalyst } from '../../utils/invoiceNormalizer';
+import { normalizeName } from '../../utils/text';
 
-// Utilizando exactamente la misma lógica de elegibilidad de AnalystTable.jsx 
-// para asegurar que los números sean idénticos
 const isEligibleForCashout = (inv) => {
-    // Exclude if PAGO, PENDIENTE, EN_SOLICITUD, PENDIENTE_PAGO
     const status = inv.estadoPago || 'IMPAGO';
     if (status !== 'IMPAGO') return false;
-    // Strict IMPAGO check handles PENDIENTE/PAGO exclusion
     return (inv.diasDesdeEmision || 0) >= 40 && !inv.linkedPayoutRequestId;
 };
 
 const AnalystAvailability = () => {
     const { invoices, analysts } = useInvoiceStore();
 
-    // Normalizamos las facturas (para calcular los diasDesdeEmision)
     const normalizedInvoices = useMemo(() => {
         return (invoices || []).map(inv => normalizeInvoiceForAnalyst(inv));
     }, [invoices]);
 
-    // Calculamos los montos agregados
     const { analystTotals, totalGlobal } = useMemo(() => {
         const devMode = import.meta.env?.DEV || process.env.NODE_ENV !== 'production';
 
-        if (devMode) {
-            console.log("[ANALYST AVAILABLE] loaded analysts:", analysts);
-        }
-
         const totals = {};
+        const matchesCount = {};
+        const eligibleCount = {};
         let globalSum = 0;
 
-        // Inicializamos todos los analistas activos en 0
-        analysts.forEach(analystKey => {
-            totals[analystKey] = 0;
+        // Map normalized names back to original configured names
+        const normalizedMap = {};
+        analysts.forEach(analystName => {
+            const norm = normalizeName(analystName);
+            normalizedMap[norm] = analystName;
+            totals[analystName] = 0;
+            matchesCount[analystName] = 0;
+            eligibleCount[analystName] = 0;
         });
 
-        // Iteramos las facturas y sumamos si corresponden a un analista activo y son elegibles
+        if (devMode) {
+            console.log("[ADMIN AVAILABLE] loaded analyst rules:", analysts);
+            console.log("[ADMIN AVAILABLE] normalized map:", normalizedMap);
+        }
+
         normalizedInvoices.forEach(inv => {
-            const analystKey = inv.analista;
-            
-            // Si el analista está activo de las configuraciones y cumple estricta elegibilidad
-            if (analystKey && totals[analystKey] !== undefined && isEligibleForCashout(inv)) {
-                totals[analystKey] += Number(inv.totalAPagarAnalista || 0);
+            const rawName = inv.analista || inv.analyst;
+            if (!rawName) return;
+
+            const normInvName = normalizeName(rawName);
+            const originalName = normalizedMap[normInvName];
+
+            if (originalName) {
+                matchesCount[originalName]++;
+                
+                if (isEligibleForCashout(inv)) {
+                    eligibleCount[originalName]++;
+                    // Use Number() just like the analyst dashboard
+                    totals[originalName] += Number(inv.totalAPagarAnalista || 0);
+                }
             }
         });
 
-        // Formato array mapeado con orden
         const analystList = Object.entries(totals).map(([analyst, sum]) => {
             globalSum += sum;
             if (devMode) {
-                console.log(`[ANALYST AVAILABLE] computed available amount for ${analyst}: $${sum}`);
+                console.log(`[ADMIN AVAILABLE] analyst: ${analyst}`);
+                console.log(`[ADMIN AVAILABLE] matched invoices count: ${matchesCount[analyst]}`);
+                console.log(`[ADMIN AVAILABLE] eligible invoices count: ${eligibleCount[analyst]}`);
+                console.log(`[ADMIN AVAILABLE] available amount: ${sum}`);
+                console.log(`[ADMIN AVAILABLE] source fields used: totalAPagarAnalista`);
+                console.log(`[ADMIN AVAILABLE] matching mode: normalized string`);
+                console.log("-----------------------------------------");
             }
             return { analyst, montoDisponible: sum };
         });
 
-        // Ordenar de mayor a menor
         analystList.sort((a, b) => b.montoDisponible - a.montoDisponible);
 
-        if (devMode) {
-            console.log(`[ANALYST AVAILABLE] total global: $${globalSum}`);
-        }
+        if (devMode) console.log(`[ADMIN AVAILABLE] total global: $${globalSum}`);
 
         return { analystTotals: analystList, totalGlobal: globalSum };
     }, [invoices, analysts, normalizedInvoices]);
