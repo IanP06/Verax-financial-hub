@@ -437,7 +437,7 @@ const MasterTable = () => {
                     <tbody>
                         {visibleRows.length === 0 ? <tr><td colSpan="11" className="p-4 text-center text-gray-500 dark:text-gray-400">No hay resultados</td></tr> :
                             visibleRows.map((inv) => (
-                                <tr key={inv.id} className="border-b hover:bg-gray-50 dark:hover:bg-slate-800 dark:border-slate-700">
+                                <tr key={inv.id} onDoubleClick={() => setEditingInvoice(inv)} className="border-b hover:bg-gray-50 dark:hover:bg-slate-800 dark:border-slate-700">
                                     <td className="p-2 font-semibold text-gray-600 dark:text-gray-300">{inv.emisor}</td>
                                     <td className="p-2">
                                         <div className="font-bold dark:text-gray-200">{inv.nroFactura}</div>
