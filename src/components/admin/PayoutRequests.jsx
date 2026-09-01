@@ -69,11 +69,11 @@ const PayoutRequests = () => {
                         estadoPago: nextInvoiceStatus,
                         paymentStatus: nextInvoiceStatus
                     });
-                    // Mirror
-                    batch.update(doc(db, `analyst_invoices/${req.analystUid}/items`, invId), {
+                    // Mirror (Safe set with merge)
+                    batch.set(doc(db, `analyst_invoices/${req.analystUid}/items`, invId), {
                         paymentStatus: nextInvoiceStatus,
                         estadoPago: nextInvoiceStatus // Sync state
-                    });
+                    }, { merge: true });
                 });
             }
 
@@ -113,10 +113,10 @@ const PayoutRequests = () => {
                         estadoPago: 'PENDIENTE_PAGO',
                         paymentStatus: 'PENDIENTE_PAGO'
                     });
-                    batch.update(doc(db, `analyst_invoices/${req.analystUid}/items`, invId), {
+                    batch.set(doc(db, `analyst_invoices/${req.analystUid}/items`, invId), {
                         paymentStatus: 'PENDIENTE_PAGO',
                         estadoPago: 'PENDIENTE_PAGO'
-                    });
+                    }, { merge: true });
                 });
             }
 
@@ -162,11 +162,11 @@ const PayoutRequests = () => {
                     batch.update(doc(db, 'invoices', invId), fieldsToReset);
 
                     // Mirror
-                    batch.update(doc(db, `analyst_invoices/${req.analystUid}/items`, invId), {
+                    batch.set(doc(db, `analyst_invoices/${req.analystUid}/items`, invId), {
                         paymentStatus: 'IMPAGO',
                         estadoPago: 'IMPAGO',
                         linkedPayoutRequestId: null
-                    });
+                    }, { merge: true });
                 });
             }
 
@@ -209,16 +209,16 @@ const PayoutRequests = () => {
                     });
 
                     // Mirror
-                    batch.update(doc(db, `analyst_invoices/${req.analystUid}/items`, invId), {
+                    batch.set(doc(db, `analyst_invoices/${req.analystUid}/items`, invId), {
                         paymentStatus: 'PAGO',
                         estadoPago: 'PAGO',
                         paymentDate: dateStr
-                    });
+                    }, { merge: true });
                 });
             }
 
             await batch.commit();
-            fetchRequests();
+            // Handled by listener (onSnapshot)
 
         } catch (e) {
             console.error("Error marking as paid:", e);

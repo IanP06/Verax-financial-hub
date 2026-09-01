@@ -13,16 +13,15 @@ const parseDate = (dateStr) => {
 // === MIRROR HELPERS ===
 // Función para sanear datos y sincronizar con la colección espejo del analista
 const syncInvoiceToAnalystMirror = async (invoiceData, invoiceId, analystProfiles) => {
-    if (!invoiceData.analyst || !analystProfiles) return;
+    const analystName = invoiceData.analyst || invoiceData.analista;
+    if (!analystName || !analystProfiles) return;
 
-    // Buscar UID del analista basado en el nombre (analystKey debe coincidir con el nombre guardado en invoice.analyst)
-    // invoice.analyst ejemplo: "Ariel"
-    // analystProfiles ejemplo: [{ uid: "...", analystKey: "Ariel" }, ...]
+    // Buscar UID del analista basado en el nombre (analystKey debe coincidir con el nombre guardado en invoice.analyst / analista)
     // Normalizamos a mayúsculas para buscar
-    const targetAnalyst = analystProfiles.find(p => p.analystKey?.toUpperCase() === invoiceData.analyst.toUpperCase());
+    const targetAnalyst = analystProfiles.find(p => p.analystKey?.toUpperCase() === analystName.toUpperCase());
 
     if (!targetAnalyst || !targetAnalyst.uid) {
-        console.warn(`[Mirror] No se encontró UID para analista: ${invoiceData.analyst}`);
+        console.warn(`[Mirror] No se encontró UID para analista: ${analystName}`);
         return;
     }
 
@@ -32,13 +31,13 @@ const syncInvoiceToAnalystMirror = async (invoiceData, invoiceId, analystProfile
         // Campos permitidos SOLO para el analista (Sanitized)
         const safeData = {
             invoiceNumber: invoiceData.nroFactura || "S/N",
-            claimNumber: invoiceData.nroSiniestro || "S/N",
+            claimNumber: invoiceData.nroSiniestro || invoiceData.siniestro || "S/N",
             insurer: invoiceData.aseguradora || "Desconocida",
-            issueDate: invoiceData.fecha || "", // String DD/MM/YYYY
+            issueDate: invoiceData.fecha || invoiceData.fechaEmision || "", // String DD/MM/YYYY
             // totalToLiquidate = gestion + ahorroAPagar + viaticos
             totalToLiquidate: Number(invoiceData.totalAPagarAnalista || 0),
             paymentStatus: invoiceData.estadoPago || "IMPAGO",
-            paymentDate: invoiceData.fechaPago || null, // Si ya se pagó
+            paymentDate: invoiceData.fechaPago || invoiceData.fechaPagoAnalista || null, // Si ya se pagó
             linkedPayoutRequestId: invoiceData.linkedPayoutRequestId || null,
             updatedAt: new Date().toISOString()
         };
@@ -499,7 +498,7 @@ const useInvoiceStore = create(
 
                     // === MIRROR SYNC (DELETE) ===
                     if (invoiceToDelete) {
-                        await deleteInvoiceFromAnalystMirror(id, invoiceToDelete.analyst, get().analystProfiles);
+                        await deleteInvoiceFromAnalystMirror(id, invoiceToDelete.analyst || invoiceToDelete.analista, get().analystProfiles);
                     }
                     // ===================
 
@@ -712,11 +711,13 @@ const useInvoiceStore = create(
 
                     // === MIRROR SYNC (UPDATE) ===
                     const updatedFull = { ...current, ...finalUpdates };
+                    const oldAnalyst = current ? (current.analyst || current.analista) : null;
+                    const newAnalyst = updatedFull.analyst || updatedFull.analista;
 
                     // Check if analyst changed to move the mirror doc
-                    if (current && current.analyst !== updatedFull.analyst) {
+                    if (oldAnalyst && oldAnalyst !== newAnalyst) {
                         // Delete from old analyst
-                        await deleteInvoiceFromAnalystMirror(id, current.analyst, get().analystProfiles);
+                        await deleteInvoiceFromAnalystMirror(id, oldAnalyst, get().analystProfiles);
                         // Create in new analyst
                         await syncInvoiceToAnalystMirror(updatedFull, id, get().analystProfiles);
                     } else {

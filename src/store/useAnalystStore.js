@@ -307,13 +307,13 @@ const useAnalystStore = create((set, get) => ({
                     payoutRequestedAt: serverTimestamp()
                 });
 
-                // Update MIRROR
+                // Update MIRROR (Safe set with merge to avoid 'No document to update' error)
                 const mirrorRef = doc(db, `analyst_invoices/${uid}/items`, invId);
-                batch.update(mirrorRef, {
+                batch.set(mirrorRef, {
                     paymentStatus: 'PENDIENTE_APROBACION',
                     estadoPago: 'PENDIENTE_APROBACION',
                     linkedPayoutRequestId: requestId
-                });
+                }, { merge: true });
             });
 
             await batch.commit();
@@ -333,7 +333,7 @@ const useAnalystStore = create((set, get) => ({
         set({ loading: true });
         try {
             const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
-            const { updatedoc, arrayUnion } = await import('firebase/firestore'); // ensure imports
+            const { arrayUnion } = await import('firebase/firestore'); // ensure imports
 
             const storage = getStorage();
             const storageRef = ref(storage, `payout_receipts/${requestId}/${file.name}`);
@@ -381,11 +381,11 @@ const useAnalystStore = create((set, get) => ({
                         estadoPago: 'PENDIENTE_PAGO',
                         paymentStatus: 'PENDIENTE_PAGO'
                     });
-                    // Mirror
-                    batch.update(doc(db, `analyst_invoices/${analystUid}/items`, invId), {
+                    // Mirror (Safe set with merge)
+                    batch.set(doc(db, `analyst_invoices/${analystUid}/items`, invId), {
                         paymentStatus: 'PENDIENTE_PAGO',
                         estadoPago: 'PENDIENTE_PAGO'
-                    });
+                    }, { merge: true });
                 });
             }
 
