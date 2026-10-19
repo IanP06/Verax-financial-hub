@@ -4,6 +4,8 @@ import { Trash, Download, Search, Edit2, Clock, FileText, CheckCircle, AlertTria
 import EditInvoiceModal from './EditInvoiceModal';
 import PaymentConfirmationModal from './PaymentConfirmationModal';
 import BulkChargeModal from './BulkChargeModal';
+import BulkStatusModal from './BulkStatusModal';
+import { MAX_BULK_INVOICES, visibleSelection } from '../../utils/bulkInvoiceStatus.js';
 
 const MasterTable = () => {
     const { invoices, updateInvoiceStatus, deleteInvoice, updateInvoice, analysts, config } = useInvoiceStore();
@@ -13,6 +15,9 @@ const MasterTable = () => {
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [showBulkChargeModal, setShowBulkChargeModal] = useState(false);
     const [paymentSnapshot, setPaymentSnapshot] = useState({ ids: [], total: 0, count: 0 });
+    const [selectedIds, setSelectedIds] = useState([]);
+    const [statusRows, setStatusRows] = useState(null);
+    const [statusMessage, setStatusMessage] = useState('');
 
     // --- HELPERS DE ORDENAMIENTO (USER REQUEST) ---
     const parseMoney = (v) => {
@@ -207,6 +212,20 @@ const MasterTable = () => {
         return today > deadline;
     };
 
+    const selectedRows = visibleSelection(visibleRows, selectedIds);
+    const selectedSet = new Set(selectedRows.map(row => row.id));
+    const allVisibleSelected = visibleRows.length > 0 && selectedRows.length === visibleRows.length;
+    const hiddenSelectedCount = invoices.filter(row => selectedIds.includes(row.id) && !selectedSet.has(row.id)).length;
+    const toggleAllVisible = () => {
+        const visibleIds = new Set(visibleRows.map(row => row.id));
+        setSelectedIds(current => allVisibleSelected ? current.filter(id => !visibleIds.has(id)) : [...new Set([...current, ...visibleIds])]);
+        setStatusMessage('');
+    };
+    const toggleSelected = id => {
+        setSelectedIds(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
+        setStatusMessage('');
+    };
+
     const handleStateChange = (id, nuevoEstado) => {
         if (nuevoEstado === 'COBRADO') {
             const fechaReal = prompt("Ingrese la fecha REAL de cobro (DD/MM/AAAA):", new Date().toLocaleDateString('es-AR'));
@@ -394,11 +413,27 @@ const MasterTable = () => {
             {editingInvoice && <EditInvoiceModal invoice={editingInvoice} onClose={() => setEditingInvoice(null)} />}
             {showPaymentModal && <PaymentConfirmationModal count={paymentSnapshot.count} total={paymentSnapshot.total} onConfirm={handleConfirmPayment} onClose={() => setShowPaymentModal(false)} />}
             {showBulkChargeModal && <BulkChargeModal onClose={() => setShowBulkChargeModal(false)} />}
+            {statusRows && <BulkStatusModal rows={statusRows} onClose={() => setStatusRows(null)} onSuccess={count => {
+                const completed = new Set(statusRows.map(row => row.id));
+                setSelectedIds(current => current.filter(id => !completed.has(id)));
+                setStatusRows(null);
+                setStatusMessage(`Estados actualizados en ${count} casos.`);
+            }} />}
+
+            <div className="flex flex-wrap items-center gap-3 mb-4 rounded border border-blue-200 dark:border-slate-700 bg-blue-50 dark:bg-slate-800 p-3 text-sm">
+                <strong>{selectedRows.length} casos visibles seleccionados</strong>
+                {hiddenSelectedCount > 0 && <span className="text-gray-600 dark:text-gray-300">{hiddenSelectedCount} ocultos por filtros: no se modificarán.</span>}
+                <button type="button" disabled={!selectedRows.length || selectedRows.length > MAX_BULK_INVOICES} onClick={() => setStatusRows(selectedRows.map(row => ({ ...row })))} className="bg-blue-700 text-white px-3 py-2 rounded disabled:opacity-50">Cambiar pago / cobro</button>
+                <button type="button" disabled={!selectedIds.length} onClick={() => { setSelectedIds([]); setStatusMessage(''); }} className="px-3 py-2 border rounded disabled:opacity-50">Limpiar selección</button>
+                {selectedRows.length > MAX_BULK_INVOICES && <span role="status">Seleccioná hasta {MAX_BULK_INVOICES} casos por operación.</span>}
+            </div>
+            {statusMessage && <p role="status" className="mb-3 text-green-700 dark:text-green-300">{statusMessage}</p>}
 
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                     <thead>
                         <tr className="text-[#355071] dark:text-blue-300 border-b-2 border-[#355071] bg-gray-50 dark:bg-slate-800">
+                            <th className="p-2"><input type="checkbox" aria-label="Seleccionar todos los casos visibles" checked={allVisibleSelected} disabled={!visibleRows.length} ref={node => { if (node) node.indeterminate = selectedRows.length > 0 && !allVisibleSelected; }} onChange={toggleAllVisible} /></th>
                             <th onClick={() => onSort('emisor')} className={thClass}>
                                 Emisor <SortIcon col="emisor" />
                             </th>
@@ -435,9 +470,10 @@ const MasterTable = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {visibleRows.length === 0 ? <tr><td colSpan="11" className="p-4 text-center text-gray-500 dark:text-gray-400">No hay resultados</td></tr> :
+                        {visibleRows.length === 0 ? <tr><td colSpan="12" className="p-4 text-center text-gray-500 dark:text-gray-400">No hay resultados</td></tr> :
                             visibleRows.map((inv) => (
                                 <tr key={inv.id} onDoubleClick={() => setEditingInvoice(inv)} className="border-b hover:bg-gray-50 dark:hover:bg-slate-800 dark:border-slate-700">
+                                    <td className="p-2" onDoubleClick={event => event.stopPropagation()}><input type="checkbox" aria-label={`Seleccionar factura ${inv.nroFactura}, siniestro ${inv.siniestro}`} checked={selectedSet.has(inv.id)} onChange={() => toggleSelected(inv.id)} /></td>
                                     <td className="p-2 font-semibold text-gray-600 dark:text-gray-300">{inv.emisor}</td>
                                     <td className="p-2">
                                         <div className="font-bold dark:text-gray-200">{inv.nroFactura}</div>

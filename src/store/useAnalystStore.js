@@ -3,6 +3,7 @@ import { db } from '../lib/firebase';
 import { collection, getDocs, addDoc, query, where, orderBy, doc, updateDoc, serverTimestamp, getDoc, onSnapshot } from 'firebase/firestore';
 import { normalizeName } from '../utils/text';
 import { getAnalystTotal } from '../utils/money';
+import { MAX_PAYOUT_INVOICES } from '../utils/payoutLimits';
 
 const useAnalystStore = create((set, get) => ({
     analystInvoices: [],
@@ -239,6 +240,10 @@ const useAnalystStore = create((set, get) => ({
     createPayoutRequest: async (uid, analystName, selectedInvoices, /* legacyArg ignored */) => {
         // selectedInvoices: Array of full invoice objects
         if (!uid || selectedInvoices.length === 0) return;
+        if (selectedInvoices.length > MAX_PAYOUT_INVOICES) return {
+            success: false,
+            error: `Seleccioná hasta ${MAX_PAYOUT_INVOICES} facturas por solicitud. Podés presentar otra solicitud con las restantes.`
+        };
 
         set({ loading: true });
         try {

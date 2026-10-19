@@ -1,4 +1,6 @@
 import React from 'react';
+import MoneyInput from './MoneyInput';
+import { formatStagingMoney } from '../../utils/stagingAmounts.js';
 import { Trash, Check } from 'lucide-react';
 import useInvoiceStore from '../../store/useInvoiceStore';
 
@@ -26,10 +28,6 @@ const StagingTable = () => {
         }
     };
 
-    const isRuleFixed = (analystName) => {
-        const rule = config?.analystRules?.find(r => r.name === analystName);
-        return rule?.plusMode === 'FIJO';
-    };
 
     return (
         <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-md mt-6 transition-colors">
@@ -37,7 +35,7 @@ const StagingTable = () => {
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Revisa y completa los datos antes de confirmar.</p>
 
             <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
+                <table className="w-max min-w-full text-left border-collapse text-xs">
                     <thead>
                         <tr className="text-[#355071] dark:text-blue-300 border-b-2 border-[#355071] dark:border-blue-500">
                             <th className="p-2">Factura / Siniestro</th>
@@ -71,6 +69,7 @@ const StagingTable = () => {
                                             className="border rounded p-1 w-full text-xs font-mono text-gray-600 mb-1 focus:ring-1 focus:ring-blue-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                                         />
                                         <div className="text-[10px] text-gray-400">{inv.emisor}</div>
+                                        {inv.extractionWarnings?.length > 0 && <div role="status" className="mt-1 max-w-64 text-amber-600 dark:text-amber-300">{inv.extractionWarnings.join(' ')}</div>}
                                     </td>
                                     <td className="p-2">
                                         <select
@@ -90,12 +89,7 @@ const StagingTable = () => {
 
                                     {/* Monto Fact (Display Only / Input?) kept for reference but not for calc now */}
                                     <td className="p-2">
-                                        <input
-                                            type="text"
-                                            value={inv.monto}
-                                            onChange={(e) => updateStagingInvoice(inv.id, 'monto', e.target.value)}
-                                            className="border rounded p-1 w-20 text-right dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                        />
+                                        <MoneyInput label="Monto Fact." value={inv.monto} onChange={value => updateStagingInvoice(inv.id, 'monto', value === '' ? '' : Number(value).toFixed(2).replace('.', ','))} />
                                     </td>
 
                                     {/* Analista */}
@@ -114,16 +108,10 @@ const StagingTable = () => {
 
                                     {/* Liquidacion Inputs */}
                                     <td className="p-2 bg-blue-50 dark:bg-slate-800">
-                                        <input type="number" value={inv.montoGestion} onChange={(e) => updateStagingInvoice(inv.id, 'montoGestion', e.target.value)} className="border rounded p-1 w-16 text-right dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+                                        <MoneyInput label="Gestión a pagar" value={inv.montoGestion} onChange={value => updateStagingInvoice(inv.id, 'montoGestion', value)} />
                                     </td>
                                     <td className="p-2 bg-blue-50 dark:bg-slate-800">
-                                        <input
-                                            type="number"
-                                            placeholder="0"
-                                            value={inv.ahorroTotal || ''}
-                                            onChange={(e) => updateStagingInvoice(inv.id, 'ahorroTotal', e.target.value)}
-                                            className="border rounded p-1 w-20 text-right font-bold text-green-600 dark:bg-slate-700 dark:border-slate-600 dark:text-green-400"
-                                        />
+                                        <MoneyInput label="Ahorro Total (Base)" value={inv.ahorroTotal} onChange={value => updateStagingInvoice(inv.id, 'ahorroTotal', value)} />
                                     </td>
                                     <td className="p-2 bg-blue-50 dark:bg-slate-800">
                                         {/* PLUS AHORRO SMART */}
@@ -152,18 +140,13 @@ const StagingTable = () => {
                                         })()}
                                     </td>
                                     <td className="p-2 bg-blue-50 dark:bg-slate-800">
-                                        <input
-                                            type="number"
-                                            value={inv.ahorroAPagar}
-                                            readOnly
-                                            className="border rounded p-1 w-16 text-right bg-gray-100 text-gray-600 dark:bg-black/20 dark:border-slate-600 dark:text-gray-300 cursor-not-allowed"
-                                        />
+                                        <MoneyInput label="Ahorro a pagar" value={inv.ahorroAPagar} readOnly />
                                     </td>
                                     <td className="p-2 bg-blue-50 dark:bg-slate-800">
-                                        <input type="number" value={inv.viaticosAPagar} onChange={(e) => updateStagingInvoice(inv.id, 'viaticosAPagar', e.target.value)} className="border rounded p-1 w-16 text-right dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+                                        <MoneyInput label="Viáticos" value={inv.viaticosAPagar} onChange={value => updateStagingInvoice(inv.id, 'viaticosAPagar', value)} />
                                     </td>
-                                    <td className="p-2 bg-blue-100 dark:bg-slate-700 font-bold text-right text-[#355071] dark:text-blue-200">
-                                        ${inv.totalAPagarAnalista?.toLocaleString('es-AR') || 0}
+                                    <td className="p-2 bg-blue-100 dark:bg-slate-700 font-bold text-right whitespace-nowrap tabular-nums text-[#355071] dark:text-blue-200">
+                                        ${formatStagingMoney(inv.totalAPagarAnalista ?? 0)}
                                     </td>
 
                                     {/* Acciones */}

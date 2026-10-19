@@ -1,5 +1,6 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { extractInvoiceLayout } from './invoiceLayout.js';
 GlobalWorkerOptions.workerSrc = pdfWorker;
 
 // HARDCODED FALLBACKS (Just in case)
@@ -32,7 +33,7 @@ export const parseInvoicePDF = async (file, { companiesSeeds = [], emittersSeeds
         const nameParts = file.name.split('_');
         const lastPart = nameParts[nameParts.length - 1]; // 00000916.pdf
         const cleanNum = lastPart.toLowerCase().replace('.pdf', '');
-        nroFactura = String(parseInt(cleanNum, 10));
+        if (/^\d+$/.test(cleanNum)) nroFactura = String(parseInt(cleanNum, 10));
     } catch (e) {
         console.warn("No se pudo extraer factura del nombre del archivo", e);
     }
@@ -41,10 +42,12 @@ export const parseInvoicePDF = async (file, { companiesSeeds = [], emittersSeeds
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await getDocument(arrayBuffer).promise;
     let fullText = '';
+    const pages = [];
 
     for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
+        pages.push(textContent.items);
         fullText += textContent.items.map(item => item.str).join('§') + '§';
     }
 
@@ -52,9 +55,7 @@ export const parseInvoicePDF = async (file, { companiesSeeds = [], emittersSeeds
     const normalizedText = normalizeToken(cleanText);
 
     // 3. Siniestro (Limpieza agresiva)
-    const siniestroMatch = cleanText.match(/GESTION\s*STRO.*?(\d{4}\s*-\s*\d+)/i);
-    let siniestro = siniestroMatch ? siniestroMatch[1].replace(/\s/g, '') : "PENDIENTE";
-    if (siniestro.endsWith("1") && siniestro.length > 9) siniestro = siniestro.slice(0, -1);
+    const extracted = extractInvoiceLayout(pages);
 
     // 4. Aseguradora (Dynamic Seeds w/ Normalization)
     let aseguradora = "OTRA";
@@ -116,22 +117,13 @@ export const parseInvoicePDF = async (file, { companiesSeeds = [], emittersSeeds
     }
 
     // 6. Monto
-    const montoMatches = cleanText.match(/(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})/g);
-    let monto = "0.00";
-    if (montoMatches) monto = montoMatches[montoMatches.length - 1];
 
     // 7. Fecha
     const fechaMatch = cleanText.match(/(\d{2}\/\d{2}\/\d{4})/);
     const fecha = fechaMatch ? fechaMatch[1] : new Date().toLocaleDateString();
 
     // 8. PLUS POR AHORRO
-    let plusPorAhorro = 0;
-    const plusMatch = cleanText.match(/PLUS POR AHORRO.*?(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})/i);
-    if (plusMatch) {
-        let rawPlus = plusMatch[1];
-        let normalized = rawPlus.replace(/\./g, '').replace(',', '.');
-        plusPorAhorro = parseFloat(normalized) || 0;
-    }
-
-    return { nroFactura, siniestro, aseguradora, emisor, monto, fecha, plusPorAhorro };
+    // The savings amount is a base, never the analyst's percentage.
+    await pdf.destroy();
+    return { nroFactura, aseguradora, emisor, fecha, plusPorAhorro: 0, ...extracted };
 };
