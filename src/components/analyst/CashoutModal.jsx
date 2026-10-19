@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import useAnalystStore from '../../store/useAnalystStore';
 
 import { getAnalystTotal } from '../../utils/money';
+import { MAX_PAYOUT_INVOICES } from '../../utils/payoutLimits';
 
 const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfile }) => {
     const { createPayoutRequest } = useAnalystStore();
@@ -50,7 +51,7 @@ const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfil
     const handleConfirm = async () => {
         setLoading(true);
         const selectedInvoices = invoices.filter(inv => selectedIds.includes(inv.id));
-        const analystName = userProfile?.displayName || user?.email || 'Analista'; // Fallback
+        const analystName = userProfile?.analystKey || userProfile?.displayName || user?.email || 'Analista';
 
         // Check for invoice requirement (State based)
         // const requiresInvoice = userProfile?.requiresInvoice === true; // OLD
@@ -143,6 +144,11 @@ const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfil
                     )}
                 </div>
 
+                {selectedInvoices.length > MAX_PAYOUT_INVOICES && (
+                    <p role="alert" className="mb-4 text-sm text-red-600">
+                        Seleccioná hasta {MAX_PAYOUT_INVOICES} facturas por solicitud. Podés presentar otra solicitud con las restantes.
+                    </p>
+                )}
                 <div className="flex justify-end gap-3">
                     <button
                         onClick={onClose}
@@ -154,7 +160,7 @@ const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfil
                     <button
                         onClick={handleConfirm}
                         className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-500 disabled:opacity-50"
-                        disabled={loading}
+                        disabled={loading || selectedInvoices.length === 0 || selectedInvoices.length > MAX_PAYOUT_INVOICES}
                     >
                         {loading ? 'Procesando...' : 'Confirmar Solicitud'}
                     </button>

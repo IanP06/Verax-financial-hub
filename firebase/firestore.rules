@@ -1,0 +1,119 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function profile() {
+      return get(/databases/$(database)/documents/userProfiles/$(request.auth.uid)).data;
+    }
+    function active() {
+      return request.auth != null && profile().get('isActive', true) != false;
+    }
+    function admin() { return active() && profile().role.lower() == 'admin'; }
+    function analyst() { return active() && profile().role.lower() == 'analyst'; }
+    function owns(data) {
+      let key = profile().get('analystKey', profile().get('displayName', ''));
+      return analyst() && key != '' &&
+        (data.get('analista', '') == key || data.get('analyst', '') == key);
+    }
+    function payoutAfter(id) {
+      return getAfter(/databases/$(database)/documents/payoutRequests/$(id)).data;
+    }
+    function validInvoiceChange(id) {
+      let next = request.resource.data;
+      let linked = next.get('linkedPayoutRequestId', '');
+      let payout = payoutAfter(linked);
+      return owns(resource.data) && payout.analystUid == request.auth.uid && id in payout.invoiceIds && (
+        (resource.data.get('estadoPago', 'IMPAGO') == 'IMPAGO' &&
+         resource.data.get('paymentStatus', 'IMPAGO') == 'IMPAGO' &&
+         resource.data.get('linkedPayoutRequestId', null) == null &&
+         next.diff(resource.data).affectedKeys().hasOnly(['estadoPago', 'paymentStatus', 'linkedPayoutRequestId', 'payoutRequestedAt']) &&
+         next.estadoPago == 'PENDIENTE_APROBACION' && next.paymentStatus == next.estadoPago &&
+         next.payoutRequestedAt == request.time && payout.status == 'SUBMITTED' && payout.createdAt == request.time) ||
+        (resource.data.estadoPago == 'PENDIENTE_FACTURA' &&
+         next.diff(resource.data).affectedKeys().hasOnly(['estadoPago', 'paymentStatus']) &&
+         next.estadoPago == 'PENDIENTE_PAGO' && next.paymentStatus == next.estadoPago &&
+         payout.status == 'READY_TO_PAY' && payout.invoiceStatus == 'UPLOADED')
+      );
+    }
+    // Five invoices leave headroom for Firestore access and expression limits.
+    function itemTotal(data) {
+      return data.get('totalAPagarAnalista', null) != null ? data.totalAPagarAnalista :
+        data.get('totalALiquidar', null) != null ? data.totalALiquidar :
+        data.get('montoGestion', 0) + data.get('plusPorAhorro', 0) +
+        data.get('viaticosAPagar', 0) + data.get('ahorroAPagar', 0);
+    }
+    function checkedItem(payout, id, index) {
+      let invoice = getAfter(/databases/$(database)/documents/invoices/$(payout.invoiceIds[index])).data;
+      let item = payout.invoiceSnapshot[index];
+      return (invoice.get('analista', '') == payout.analystName || invoice.get('analyst', '') == payout.analystName) && invoice.linkedPayoutRequestId == id &&
+        invoice.estadoPago == 'PENDIENTE_APROBACION' && invoice.payoutRequestedAt == request.time &&
+        item.id == payout.invoiceIds[index] && item.total is number && item.total >= 0 &&
+        item.total == itemTotal(invoice);
+    }
+    function amountAt(payout, id, index) {
+      return payout.invoiceIds.size() > index ? payout.invoiceSnapshot[index].total : 0;
+    }
+    function validAt(payout, id, index) {
+      return payout.invoiceIds.size() <= index || checkedItem(payout, id, index);
+    }
+    function validPayout(id) {
+      let data = request.resource.data;
+      let sum = amountAt(data,id,0) + amountAt(data,id,1) + amountAt(data,id,2) +
+        amountAt(data,id,3) + amountAt(data,id,4); // bounded sum
+
+      return analyst() && data.keys().hasOnly(['analystUid','analystName','createdAt','status',
+        'invoiceIds','invoiceSnapshot','totalAmount','expiresAt','requiresInvoiceSnapshot','invoiceStatus','invoiceReceipt','history']) &&
+        data.analystUid == request.auth.uid && data.analystName == profile().get('analystKey', profile().get('displayName', '')) &&
+        data.status == 'SUBMITTED' && data.createdAt == request.time &&
+        data.invoiceIds is list && data.invoiceIds.size() > 0 && data.invoiceIds.size() <= 5 &&
+        data.invoiceIds.toSet().size() == data.invoiceIds.size() &&
+        data.invoiceSnapshot.size() == data.invoiceIds.size() &&
+        validAt(data,id,0) && validAt(data,id,1) && validAt(data,id,2) &&
+        validAt(data,id,3) && validAt(data,id,4) &&
+
+        data.totalAmount is number && data.totalAmount >= 0 && sum >= 0 &&
+        math.abs(data.totalAmount - sum) < 0.005 && data.invoiceReceipt == null &&
+        data.expiresAt == null && data.requiresInvoiceSnapshot is bool &&
+        data.invoiceStatus == (data.requiresInvoiceSnapshot ? 'REQUIRED' : 'NOT_REQUIRED');
+    }
+    match /userProfiles/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || admin());
+      allow list, write: if admin();
+    }
+    match /settings/{id} {
+      allow read: if admin() || (analyst() && id in ['global','analystRules']);
+      allow write: if admin();
+    }
+    match /invoices/{id} {
+      allow read: if admin() || owns(resource.data);
+      allow create, delete: if admin();
+      allow update: if admin() || validInvoiceChange(id);
+    }
+    match /analyst_invoices/{uid}/items/{id} {
+      function mirrorMatches() {
+        let invoice = getAfter(/databases/$(database)/documents/invoices/$(id)).data;
+        let next = request.resource.data;
+        return analyst() && uid == request.auth.uid && owns(invoice) &&
+          next.estadoPago == invoice.estadoPago && next.paymentStatus == invoice.paymentStatus &&
+          next.get('linkedPayoutRequestId', invoice.linkedPayoutRequestId) == invoice.linkedPayoutRequestId &&
+          invoice.estadoPago in ['PENDIENTE_APROBACION','PENDIENTE_PAGO'];
+      }
+      allow read: if admin() || (analyst() && uid == request.auth.uid);
+      allow create: if admin() || (mirrorMatches() && request.resource.data.keys().hasOnly(['estadoPago','paymentStatus','linkedPayoutRequestId']));
+      allow update: if admin() || (mirrorMatches() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estadoPago','paymentStatus','linkedPayoutRequestId']));
+      allow delete: if admin();
+    }
+    match /payoutRequests/{id} {
+      allow read: if admin() || (analyst() && resource.data.analystUid == request.auth.uid);
+      allow create: if admin() || validPayout(id);
+      allow update: if admin() || (analyst() && resource.data.analystUid == request.auth.uid &&
+        resource.data.status in ['APPROVED_WAITING_INVOICE','NEEDS_INVOICE','PENDIENTE_FACTURA'] &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','invoiceStatus','invoiceReceipt','history']) &&
+        request.resource.data.status == 'READY_TO_PAY' && request.resource.data.invoiceStatus == 'UPLOADED' &&
+        request.resource.data.invoiceReceipt.uploadedByUid == request.auth.uid &&
+        request.resource.data.invoiceReceipt.storagePath == 'payout_receipts/' + id + '/' + request.resource.data.invoiceReceipt.fileName);
+      allow delete: if admin();
+    }
+    // Unknown collections remain closed, including to authenticated users.
+  }
+}
+

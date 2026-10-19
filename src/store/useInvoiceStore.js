@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { calculateStagingAmounts } from '../utils/stagingAmounts.js';
+import { executeBulkStatusChange } from '../utils/bulkInvoiceStatus.js';
 import { db } from '../lib/firebase';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, writeBatch, getDoc, query, where } from 'firebase/firestore';
 
@@ -262,7 +264,7 @@ const useInvoiceStore = create(
                 const defaults = {
                     montoGestion: state.config.montoGestion || 20000,
                     plusPorAhorro: Number(inv.plusPorAhorro) || 0,
-                    ahorroTotal: 0, // NEW field
+                    ahorroTotal: Number(inv.ahorroTotal) || 0,
                     ahorroAPagar: 0,
                     viaticosAPagar: 0,
                     estadoPago: 'IMPAGO',
@@ -270,9 +272,9 @@ const useInvoiceStore = create(
                     estadoDeCobro: 'NO COBRADO',
                     analista: inv.analista || '',
                 };
-                const totalAPagarAnalista = Number(defaults.montoGestion) + Number(defaults.ahorroAPagar) + Number(defaults.viaticosAPagar);
+                const amounts = calculateStagingAmounts(defaults);
                 return {
-                    stagingInvoices: [...state.stagingInvoices, { ...inv, ...defaults, totalAPagarAnalista, id: Date.now() }]
+                    stagingInvoices: [...state.stagingInvoices, { ...inv, ...defaults, ...amounts, id: crypto.randomUUID() }]
                 };
             }),
             removeStagingInvoice: (id) => set((state) => ({ stagingInvoices: state.stagingInvoices.filter((i) => i.id !== id) })),
@@ -281,17 +283,8 @@ const useInvoiceStore = create(
                     if (i.id !== id) return i;
                     const updated = { ...i, [field]: value };
 
-                    // Auto-calc Ahorro Amount if Savings Base or Percentage changes
-                    if (['montoGestion', 'plusPorAhorro', 'ahorroTotal'].includes(field)) {
-                        const savingsBase = Number(updated.ahorroTotal) || 0;
-                        const pct = Number(updated.plusPorAhorro) || 0;
-
-                        // New Formula: AhorroAPagar = AhorroTotal * Pct%
-                        updated.ahorroAPagar = Math.round(savingsBase * (pct / 100));
-                    }
-
-                    // Recalc Total
-                    updated.totalAPagarAnalista = Number(updated.montoGestion || 0) + Number(updated.ahorroAPagar || 0) + Number(updated.viaticosAPagar || 0);
+                    // Recalculate currency amounts to cents, including the initial savings base.
+                    Object.assign(updated, calculateStagingAmounts(updated));
 
                     return updated;
                 })
@@ -504,6 +497,25 @@ const useInvoiceStore = create(
 
                 } catch (e) {
                     console.error("Error borrando factura:", e);
+                }
+            },
+
+            updateSelectedInvoiceStatuses: async (rows, change) => {
+                try {
+                    const api = await import('firebase/firestore');
+                    const { getAuth } = await import('firebase/auth');
+                    const actorUid = getAuth().currentUser?.uid;
+                    let profiles = [];
+                    if (change.estadoPago) {
+                        const snapshot = await getDocs(collection(db, 'userProfiles'));
+                        profiles = snapshot.docs.map(d => ({ ...d.data(), uid: d.id }));
+                    }
+                    const updates = await executeBulkStatusChange({ api, db, actorUid, rows, change, profiles });
+                    const byId = new Map(updates.map(update => [update.id, update.fields]));
+                    set(state => ({ invoices: state.invoices.map(invoice => byId.has(invoice.id) ? { ...invoice, ...byId.get(invoice.id) } : invoice) }));
+                    return { success: true, count: updates.length };
+                } catch (error) {
+                    return { success: false, message: error.message };
                 }
             },
 

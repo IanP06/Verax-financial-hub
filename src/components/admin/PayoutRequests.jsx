@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
 import { collection, query, orderBy, doc, updateDoc, writeBatch, serverTimestamp, getDoc, onSnapshot } from 'firebase/firestore'; // Added onSnapshot
 import { CheckCircle, XCircle, Clock, FileText, DollarSign, AlertCircle } from 'lucide-react';
+import { normalizeName } from '../../utils/text';
 
 const PayoutRequests = () => {
     const [requests, setRequests] = useState([]);
@@ -38,7 +39,16 @@ const PayoutRequests = () => {
 
             // Check if requires Invoice C
             // The field in request is 'requiresInvoiceSnapshot' (new) or 'requiresInvoice' (legacy/store param)
-            const needsInvoice = req.requiresInvoiceSnapshot !== undefined ? req.requiresInvoiceSnapshot : (req.requiresInvoice || req.invoiceCRequired);
+            // An analyst-authored snapshot cannot waive an administrator's invoice requirement.
+            const [profileSnap, rulesSnap] = await Promise.all([
+                getDoc(doc(db, 'userProfiles', req.analystUid)),
+                getDoc(doc(db, 'settings', 'analystRules'))
+            ]);
+            if (!profileSnap.exists()) throw new Error('El perfil del analista ya no existe.');
+            const profile = profileSnap.data();
+            const key = normalizeName(profile.analystKey || profile.displayName);
+            const rule = (rulesSnap.data()?.rules || []).find(r => normalizeName(r.name) === key);
+            const needsInvoice = rule?.requiresInvoice === true;
 
             // Flow Step 3:
             // If needsInvoice -> req: APPROVED_WAITING_INVOICE, inv: PENDIENTE_FACTURA
@@ -49,6 +59,7 @@ const PayoutRequests = () => {
             // 1. Update Request
             const updates = {
                 status: nextStatus,
+                requiresInvoiceSnapshot: needsInvoice,
                 invoiceStatus: needsInvoice ? 'REQUIRED' : 'NOT_REQUIRED', // [NEW]
                 approvedAt: serverTimestamp(),
                 history: arrayUnion({
