@@ -62,6 +62,9 @@ export function extractInvoiceLayout(pages) {
         let pending = '';
         let previous = null;
         for (const line of lines.slice(headerIndex + 1)) {
+            // Factura C closes the item table with a document-level Subtotal.
+            // Its amount shares the last item column but is not another item.
+            if (/^SUBTOTAL\s*(?::|\$)/.test(plain(line.text).trim())) break;
             if (/IMPORTE|CAE|COMPROBANTE AUTORIZADO|ESTUDIO VERAX|PAG\./.test(plain(line.text))) break;
             const description = line.items.filter(i => i.x >= header.items.find(i => /Producto/i.test(i.text)).x - 3 && i.x < quantity.x - 5).map(i => i.text).join(' ');
             const cell = line.items.filter(i => center(i) >= left && center(i) < right);

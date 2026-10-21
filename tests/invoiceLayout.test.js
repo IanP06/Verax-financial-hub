@@ -4,6 +4,38 @@ import { extractInvoiceLayout } from '../src/utils/invoiceLayout.js';
 import { calculateStagingAmounts, formatStagingMoney, stagingMoneyWidth } from '../src/utils/stagingAmounts.js';
 
 const token = (str, x, y, width = 30) => ({ str, transform: [1, 0, 0, 1, x, y], width });
+function facturaC(rows, copy = 'ORIGINAL') {
+    const total = rows.reduce((sum, [, amount]) => sum + amount, 0).toFixed(2).replace('.', ',');
+    return [token(copy, 250, 800), token('Producto / Servicio', 59, 553, 80),
+        token('Cantidad', 239, 553), token('Precio Unit.', 335, 553),
+        token('Imp. Bonif.', 440, 553), token('Subtotal', 530, 553),
+        ...rows.flatMap(([description, amount], i) => [token(description, 59, 530 - i * 20, 150),
+            token(amount.toFixed(2).replace('.', ','), 535, 530 - i * 20, 40)]),
+        token('Subtotal: $', 440, 280), token(total, 535, 280, 40),
+        token('Importe Otros Tributos: $', 390, 260), token('0,00', 535, 260, 40),
+        token('Importe Total: $', 440, 240), token(total, 535, 240, 40)];
+}
+
+test('ATM Factura C: summary subtotal is not a second item, including ARCA copies', () => {
+    const result = extractInvoiceLayout(['ORIGINAL', 'DUPLICADO', 'TRIPLICADO'].map(copy =>
+        facturaC([['GESTION STRO 5353 - 151387', 55000]], copy)));
+    assert.equal(result.monto, '55000,00');
+    assert.equal(result.siniestro, '5353-151387');
+    assert.equal(result.invoiceItems.length, 1);
+    assert.equal(result.ahorroTotal, 0);
+    assert.deepEqual(result.extractionWarnings, []);
+    assert.equal(formatStagingMoney(result.monto), '55.000,00');
+});
+
+test('Factura C keeps multiple equal-valued items and savings, excluding only the summary', () => {
+    const result = extractInvoiceLayout([facturaC([
+        ['GESTION STRO 5353-151387', 55000.25], ['PLUS POR AHORRO', 55000.25]
+    ])]);
+    assert.equal(result.monto, '110000,50');
+    assert.equal(result.invoiceItems.length, 2);
+    assert.equal(result.ahorroTotal, 55000.25);
+    assert.deepEqual(result.extractionWarnings, []);
+});
 function page(rows, net, copy = 'ORIGINAL') {
     return [token(copy, 250, 800), token('Producto / Servicio', 59, 553, 80), token('Cantidad', 239, 553), token('Precio Unit.', 335, 553), token('% Bonif', 388, 553, 27), token('Subtotal', 434, 553, 28), token('Alicuota', 484, 557, 27), token('Subtotal c/IVA', 524, 553, 50),
         ...rows.flatMap(([description, amount], i) => [token(description, 57, 530 - i * 20, 150), token('2,00', 265, 530 - i * 20, 16), token('999,00', 350, 530 - i * 20), token('10,00', 398, 530 - i * 20, 16), token(amount, 441, 530 - i * 20, 38), token('21%', 490, 530 - i * 20, 16), token('9999999,99', 536, 530 - i * 20, 40)]),
