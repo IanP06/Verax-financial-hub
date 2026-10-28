@@ -1,8 +1,23 @@
 {
-  "firestore": { "rules": "firebase/firestore.rules" },
+  "firestore": {
+    "rules": "firebase/firestore.rules"
+  },
   "emulators": {
-    "firestore": { "port": 8085 },
-    "ui": { "enabled": false },
+    "firestore": {
+      "port": 8085
+    },
+    "ui": {
+      "enabled": false
+    },
     "singleProjectMode": true
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "payouts"
+    }
+  ],
+  "storage": {
+    "rules": "firebase/storage.rules"
   }
 }

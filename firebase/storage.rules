@@ -1,0 +1,22 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function profile() { return firestore.get(/databases/(default)/documents/userProfiles/$(request.auth.uid)).data; }
+    function active() { return request.auth != null && profile().get('isActive', true) != false; }
+    function admin() { return active() && profile().role.lower() == 'admin'; }
+    function requestData(id) { return firestore.get(/databases/(default)/documents/payoutRequests/$(id)).data; }
+    match /liquidations/{order}/{file} {
+      allow read: if admin();
+      allow create, update: if admin() && request.resource.contentType == 'application/pdf' && request.resource.size <= 20 * 1024 * 1024;
+      allow delete: if admin();
+    }
+    match /payout_receipts/{id}/{file} {
+      allow read: if admin() || (active() && requestData(id).analystUid == request.auth.uid);
+      allow create: if active() && requestData(id).analystUid == request.auth.uid &&
+        requestData(id).status in ['APPROVED_WAITING_INVOICE','NEEDS_INVOICE','PENDIENTE_FACTURA'] &&
+        requestData(id).get('activeOperation', null) == null &&
+        request.resource.size <= 10 * 1024 * 1024 && request.resource.contentType == 'application/pdf' && file.matches('.*[.]pdf');
+      allow update, delete: if false;
+    }
+  }
+}
