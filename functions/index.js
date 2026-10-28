@@ -5,9 +5,10 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { payoutService } from './service.js';
 import { DomainError } from './domain.js';
+import { paymentReceiptVerifier } from './paymentReceipt.js';
 
 initializeApp();
-const service = payoutService(getFirestore());
+const service = payoutService(getFirestore(), { verifyPaymentReceipt: (...args) => paymentReceiptVerifier(getStorage().bucket())(...args) });
 export const payoutCommand = onCall({ region: 'us-central1', timeoutSeconds: 120 }, async request => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Iniciá sesión.');
     try {

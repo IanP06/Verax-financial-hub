@@ -8,7 +8,7 @@ let app, db, service, index = 0;
 const now = new Date('2026-10-28T15:00:00Z');
 before(() => {
     if (process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8085') throw new Error('Emulador local requerido.');
-    app = initializeApp({ projectId: 'demo-verax-payouts' }, 'payout-tests'); db = getFirestore(app); service = payoutService(db, { now: () => now });
+    app = initializeApp({ projectId: 'demo-verax-payouts' }, 'payout-tests'); db = getFirestore(app); service = payoutService(db, { now: () => now, verifyPaymentReceipt: async (uid, requestId, receipt) => { assert.equal(receipt.storagePath, `payment_receipts/${requestId}/test.pdf`); return { ...receipt, uploadedByUid: uid, sha256: "test-hash" }; } });
 });
 after(async () => { await db.terminate(); await deleteApp(app); });
 beforeEach(async () => {
@@ -37,7 +37,7 @@ async function drain(result) {
     throw new Error('Proceso no termina');
 }
 const create = ids => service.command('ana', { action: 'CREATE', operationId: operation(), payload: { invoiceIds: ids } });
-const action = (requestId, name, payload = {}) => service.command(name === 'UPLOAD' ? 'ana' : 'admin', { requestId, action: name, operationId: operation(), payload });
+const action = (requestId, name, payload = {}) => service.command(name === 'UPLOAD' ? 'ana' : 'admin', { requestId, action: name, operationId: operation(), payload: name === 'PAY' ? { receiptReviewed: true, receipt: { storagePath: `payment_receipts/${requestId}/test.pdf` }, ...payload } : payload });
 for (const count of [1, 5, 6, 20, 50, 100, 300]) test(`${count} cases create one request with exact total and absent mirrors`, async () => {
     const result = await create(await seed(count));
     assert.equal((await drain(result)).phase, 'DONE');
@@ -71,6 +71,7 @@ test('full 100-case lifecycle validates invoice before payment and records one p
     await assert.rejects(() => action(result.requestId, 'PAY', payment));
     await drain(await action(result.requestId, 'VERIFY')); await drain(await action(result.requestId, 'PAY', payment));
     req = (await db.doc(`payoutRequests/${result.requestId}`).get()).data(); assert.equal(req.status, 'PAGO');
+    assert.equal(req.payment.receipt.sha256, 'test-hash'); assert.equal(req.payment.receiptReviewedByUid, 'admin');
     assert.equal((await db.collection('analystPayments').get()).size, 1);
     await assert.rejects(() => action(result.requestId, 'PAY', payment));
 });
@@ -123,4 +124,14 @@ test('interrupted application can resume its cursor without repeating previous p
     await action(result.requestId, 'RESUME');
     assert.equal((await drain(paid)).phase, 'DONE');
     assert.equal((await db.collection('analystPayments').get()).size, 1);
+});
+
+test('payment cannot bypass server receipt verification or explicit review', async () => {
+    const result = await create(await seed(1)); await drain(result); await drain(await action(result.requestId, 'APPROVE'));
+    const payload = { amount: 100.25, date: '2026-10-28', account: 'A', reference: 'proof-test', receiptReviewed: true, receipt: { storagePath: `payment_receipts/${result.requestId}/test.pdf`, sha256: 'forged' } };
+    await assert.rejects(() => action(result.requestId, 'PAY', { ...payload, receiptReviewed: false }), /cotejo/);
+    const unverified = payoutService(db, { now: () => now });
+    await assert.rejects(() => unverified.command('admin', { requestId: result.requestId, action: 'PAY', operationId: operation(), payload }), /verificar el comprobante/);
+    assert.equal((await db.doc(`payoutRequests/${result.requestId}`).get()).data().status, 'READY_TO_PAY');
+    assert.equal((await db.collection('analystPayments').get()).size, 0);
 });

@@ -18,5 +18,17 @@ service firebase.storage {
         request.resource.size <= 10 * 1024 * 1024 && request.resource.contentType == 'application/pdf' && file.matches('.*[.]pdf');
       allow update, delete: if false;
     }
+    match /payment_receipts/{id}/{file} {
+      allow read: if admin() || (active() && requestData(id).analystUid == request.auth.uid &&
+        requestData(id).get('payment', {}).get('receipt', {}).get('storagePath', '') == 'payment_receipts/' + id + '/' + file);
+      allow create: if resource == null && admin() && requestData(id).status in ['READY_TO_PAY','PENDIENTE_PAGO','APPROVED_SCHEDULED'] &&
+        requestData(id).get('activeOperation', null) == null &&
+        request.resource.size > 0 && request.resource.size <= 10 * 1024 * 1024 &&
+        request.resource.metadata.uploadedByUid == request.auth.uid && request.resource.metadata.requestId == id &&
+        ((request.resource.contentType == 'application/pdf' && file.matches('[a-zA-Z0-9-]+[.]pdf')) ||
+         (request.resource.contentType == 'image/jpeg' && file.matches('[a-zA-Z0-9-]+[.]jpg')) ||
+         (request.resource.contentType == 'image/png' && file.matches('[a-zA-Z0-9-]+[.]png')));
+      allow update, delete: if false;
+    }
   }
 }

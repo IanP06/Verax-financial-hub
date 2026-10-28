@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
+import { getStorage, ref, uploadBytes } from 'firebase/storage';
 import { db } from '../../lib/firebase';
 import { payoutCommand, payoutLabels, requestNumber, clearCreateRetryKey } from '../../utils/payoutClient';
 import PayoutTrace from './PayoutTrace';
@@ -36,6 +38,28 @@ export default function PayoutList({ requests, admin = false }) {
         catch (e) { setError(e.message); }
         finally { setBusy(null); }
     };
+    const registerPayment = async () => {
+        if (busy) return;
+        setBusy(payment.request.id); setError('');
+        try {
+            if (!payment.reviewed) throw new Error('Confirmá el cotejo del comprobante antes de registrar el pago.');
+            let receipt = payment.receipt;
+            if (!receipt) {
+                const file = payment.file;
+                const extension = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png' }[file?.type];
+                if (!extension || !file.size || file.size > 10 * 1024 * 1024) throw new Error('Adjuntá un PDF, JPG o PNG de hasta 10 MB.');
+                const fileName = `${crypto.randomUUID()}.${extension}`;
+                receipt = { fileName, originalName: file.name.slice(0, 200), storagePath: `payment_receipts/${payment.request.id}/${fileName}` };
+                await uploadBytes(ref(getStorage(), receipt.storagePath), file, { contentType: file.type,
+                    customMetadata: { uploadedByUid: getAuth().currentUser.uid, requestId: payment.request.id } });
+                setPayment(current => ({ ...current, receipt }));
+            }
+            await payoutCommand('PAY', payment.request.id, { date: payment.date, amount: payment.amount, account: payment.account,
+                reference: payment.reference, receipt, receiptReviewed: true });
+            setPayment(null);
+        } catch (e) { setError(e.message || 'No se pudo registrar el pago. Podés reintentar.'); }
+        finally { setBusy(null); }
+    };
     const filtered = requests.filter(request => {
         const date = request.createdAt?.toDate?.().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }) || '';
         return (!query.trim() || matches.has(request.id)) && (!status || request.status === status) && (!start || date >= start) && (!end || date <= end);
@@ -66,10 +90,17 @@ export default function PayoutList({ requests, admin = false }) {
             </div>
             {expanded === request.id && <PayoutTrace request={request} />}
         </article>)}
-        {payment && <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"><form className="bg-white dark:bg-slate-800 p-6 rounded-lg space-y-4 max-w-lg w-full" onSubmit={e => { e.preventDefault(); act(payment.request, 'PAY', { date: payment.date, amount: payment.amount, account: payment.account, reference: payment.reference }); }}>
+        {payment && <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"><form className="bg-white dark:bg-slate-800 p-6 rounded-lg space-y-4 max-w-lg w-full max-h-[90vh] overflow-y-auto" onSubmit={e => { e.preventDefault(); registerPayment(); }}>
             <h3 className="font-bold">Registrar pago · {requestNumber(payment.request)}</h3><p>Confirmá los datos del pago ya realizado. Esta acción no ejecuta una transferencia.</p>
-            {[['date', 'Fecha efectiva', 'date'], ['amount', 'Importe pagado', 'number'], ['account', 'Cuenta de origen', 'text'], ['reference', 'Referencia / operación bancaria', 'text']].map(([key, label, type]) => <label className="block" key={key}>{label}<input className="block w-full border p-2 dark:bg-slate-900" required type={type} step={key === 'amount' ? '0.01' : undefined} value={payment[key]} onChange={e => setPayment({ ...payment, [key]: e.target.value })} /></label>)}
-            {error && <p role="alert" className="text-red-600">{error}</p>}<button type="button" onClick={() => setPayment(null)} disabled={!!busy}>Cancelar</button><button className="bg-blue-600 text-white p-2 rounded ml-4" disabled={!!busy}>Confirmar registro</button>
+            {[['date', 'Fecha efectiva', 'date'], ['amount', 'Importe pagado', 'number'], ['account', 'Cuenta de origen', 'text'], ['reference', 'Referencia / operación bancaria', 'text']].map(([key, label, type]) => <label className="block" key={key}>{label}<input className="block w-full border p-2 dark:bg-slate-900" disabled={!!busy} required type={type} step={key === 'amount' ? '0.01' : undefined} value={payment[key]} onChange={e => setPayment({ ...payment, [key]: e.target.value, reviewed: false })} /></label>)}
+            <label className="block">Comprobante de transferencia bancaria
+                <input className="block w-full mt-2" type="file" accept="application/pdf,image/jpeg,image/png" disabled={!!busy} required={!payment.receipt} onChange={e => setPayment({ ...payment, file: e.target.files[0], receipt: null, reviewed: false })} />
+                <span className="text-sm text-slate-500">PDF, JPG o PNG · Hasta 10 MB. Quedará vinculado a esta orden.</span>
+            </label>
+            {payment.receipt && <p className="text-sm">Comprobante cargado: {payment.receipt.originalName}</p>}
+            <label className="flex items-start gap-2 text-sm"><input type="checkbox" required disabled={!!busy} checked={!!payment.reviewed} onChange={e => setPayment({ ...payment, reviewed: e.target.checked })} />Cotejé beneficiario, importe, fecha y referencia bancaria con el comprobante adjunto.</label>
+            <p className="text-xs text-slate-500">El cotejo queda registrado a tu nombre. La carga no consulta ni confirma movimientos en el banco.</p>
+            {error && <p role="alert" className="text-red-600">{error}</p>}<button type="button" onClick={() => setPayment(null)} disabled={!!busy}>Cancelar</button><button className="bg-blue-600 text-white p-2 rounded ml-4" disabled={!!busy}>{busy ? 'Guardando comprobante y pago…' : 'Confirmar registro'}</button>
         </form></div>}
     </div>;
 }

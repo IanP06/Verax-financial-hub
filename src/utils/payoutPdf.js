@@ -1,3 +1,4 @@
+import logo from '../assets/veraxLogo.js';
 import { jsPDF } from 'jspdf';
 import { autoTable } from 'jspdf-autotable';
 import { payoutLabels, requestNumber } from './payoutClient.js';
@@ -36,64 +37,70 @@ export function buildPayoutPdf(request, items, events = [], generatedAt = new Da
     const title = request.orderNumber ? 'ORDEN DE PAGO' : 'SOLICITUD DE PAGO';
     const status = payoutLabels[request.status] || request.status;
     document.setProperties({ title: `${title} ${request.orderNumber || number}`, subject: `${number} - ${status}`, author: 'Verax Financial Hub' });
+    const ink = [25, 25, 25], red = [172, 43, 50];
     let y = 48;
-    const table = (head, body, widths) => {
-        autoTable(document, { startY: y, margin: { top: 44, bottom: 20, left: 15, right: 15 }, head, body,
-            styles: { font: 'helvetica', fontSize: 8, cellPadding: 2.4, overflow: 'linebreak', textColor: [30, 41, 59] },
-            headStyles: { fillColor: [29, 46, 63], textColor: 255, fontStyle: 'bold' },
-            alternateRowStyles: { fillColor: [244, 247, 250] }, rowPageBreak: 'avoid', columnStyles: widths || {} });
-        y = document.lastAutoTable.finalY + 7;
+    const table = (head, body, widths, options = {}) => {
+        autoTable(document, { startY: y, margin: { top: 46, bottom: 22, left: 15, right: 15 }, head, body,
+            styles: { font: 'helvetica', fontSize: 9, cellPadding: 2.8, overflow: 'linebreak', textColor: ink, lineColor: [225, 225, 225], lineWidth: 0.1 },
+            headStyles: { fillColor: ink, textColor: 255, fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [247, 247, 247] }, rowPageBreak: 'avoid', columnStyles: widths || {}, ...options });
+        y = document.lastAutoTable.finalY + 8;
     };
-    const section = label => {
-        if (y > 235) { document.addPage(); y = 47; }
-        document.setFont('helvetica', 'bold'); document.setFontSize(11); document.setTextColor(29, 46, 63); document.text(label, 15, y); y += 4;
+    const section = (label, space = 30) => {
+        if (y + space > 273) { document.addPage(); y = 48; }
+        document.setFont('helvetica', 'bold'); document.setFontSize(11); document.setTextColor(...red); document.text(label, 15, y); y += 5;
     };
-    section('Identificación y estado');
+    section('Resumen de la orden');
     table([], [
-        ['N.º de solicitud', number, 'Orden de pago', request.orderNumber || 'No emitida'],
-        ['Analista', text(request.analystName), 'Estado', status],
-        ['Fecha de solicitud', pdfDate(request.createdAt), 'Cantidad de casos', String(items.length)],
-        ['Moneda', request.currency || 'ARS', 'TOTAL', `$ ${money(request.totalAmount)}`],
-        ['Fecha de aprobación', pdfDate(request.approvedAt), 'Verificación de factura', pdfDate(request.verifiedAt)],
-        ['Fecha de rechazo', pdfDate(request.rejectedAt), 'Fecha efectiva de pago', pdfDate(request.paidAt)]
-    ], { 0: { cellWidth: 31, fontStyle: 'bold' }, 1: { cellWidth: 59 }, 2: { cellWidth: 32, fontStyle: 'bold' }, 3: { cellWidth: 58 } });
-    if (request.rejectionReason || request.processingError) table([], [['Observaciones', request.rejectionReason || request.processingError]], { 0: { cellWidth: 31, fontStyle: 'bold' } });
-    section('Detalle de casos - importes originales de la solicitud');
+        ['Analista', text(request.analystName)],
+        ['Solicitud', `${number}  |  ${pdfDate(request.createdAt)}`],
+        ['Estado actual', status],
+        ...(request.approvedAt ? [['Aprobación', pdfDate(request.approvedAt)]] : []),
+        ...(request.rejectedAt ? [['Rechazo', pdfDate(request.rejectedAt)]] : []),
+        ['Casos incluidos', String(items.length)]
+    ], { 0: { cellWidth: 39, fontStyle: 'bold' }, 1: { cellWidth: 141 } });
+    table([], [['TOTAL DE LA SOLICITUD', `$ ${money(request.totalAmount)}`]], { 0: { cellWidth: 100 }, 1: { cellWidth: 80, halign: 'right' } },
+        { styles: { fontSize: 13, fontStyle: 'bold', textColor: 255, fillColor: red, cellPadding: 4 }, bodyStyles: { fillColor: red }, alternateRowStyles: { fillColor: red } });
+    if (request.rejectionReason || request.processingError) table([], [['Observaciones', request.rejectionReason || request.processingError]], { 0: { cellWidth: 39, fontStyle: 'bold' } });
+    section('Detalle de casos');
     const ordered = [...items].sort((a, b) => text(a.siniestro).localeCompare(text(b.siniestro), 'es', { numeric: true }) || a.id.localeCompare(b.id));
-    table([['N.º', 'Factura', 'Siniestro', 'Aseguradora', 'Emisión', 'Importe (ARS)']], ordered.map((item, index) => [
+    table([['N.º', 'Factura', 'Siniestro', 'Aseguradora', 'Emisión', 'Importe $']], ordered.map((item, index) => [
         String(index + 1), text(item.nroFactura), text(item.siniestro), text(item.aseguradora), text(item.fechaEmision), money((item.totalCents ?? Math.round(item.total * 100)) / 100)
-    ]), { 0: { cellWidth: 10 }, 1: { cellWidth: 23 }, 2: { cellWidth: 36 }, 3: { cellWidth: 42 }, 4: { cellWidth: 25 }, 5: { cellWidth: 44, halign: 'right' } });
-    table([], [['TOTAL DE LA SOLICITUD (ARS)', money(request.totalAmount)]], { 0: { fontStyle: 'bold', cellWidth: 136 }, 1: { fontStyle: 'bold', halign: 'right', cellWidth: 44 } });
-    section('Factura del analista y registro del pago');
-    table([], [
-        ['Estado de la factura', ({ REQUIRED: 'Requerida', NOT_REQUIRED: 'No requerida', UPLOADED: 'Subida, pendiente de verificación', VERIFIED: 'Verificada' })[request.invoiceStatus] || text(request.invoiceStatus)],
-        ['Archivo adjunto', text(request.invoiceReceipt?.fileName)],
-        ['Carga de la factura', pdfDate(request.invoiceReceipt?.uploadedAt)],
-        ['Cargada por (usuario)', text(request.invoiceReceipt?.uploadedByUid)],
-        ['Importe pagado', request.payment ? `ARS ${money(request.payment.amount)}` : 'No registrado en el detalle de pago'],
-        ['Cuenta de origen', text(request.payment?.account)],
-        ['Referencia bancaria', text(request.payment?.reference)],
-        ['Registrado por (usuario)', text(request.payment?.recordedByUid)],
-        ['Fecha del registro', pdfDate(request.payment?.recordedAt)]
-    ], { 0: { cellWidth: 48, fontStyle: 'bold' } });
-    section('Historial de acciones');
-    const actions = [...(request.history || []), ...events].sort((a, b) => (+asDate(a.at) || 0) - (+asDate(b.at) || 0));
-    table([['Fecha / hora (Argentina)', 'Acción y responsable', 'Transición / observaciones']], actions.length ? actions.map(entry => [
-        pdfDate(entry.at), `${actionLabel(entry.action)}\n${entry.actorName || entry.byUid || entry.byRole || 'Usuario no registrado'}${entry.actorName && entry.byUid ? `\n${entry.byUid}` : ''}`,
-        [entry.fromStatus && `De: ${payoutLabels[entry.fromStatus] || entry.fromStatus}`, entry.toStatus && `A: ${payoutLabels[entry.toStatus] || entry.toStatus}`, entry.note].filter(Boolean).join('\n') || '-'
-    ]) : [['-', 'Sin historial disponible', 'Registro histórico sin eventos.']], { 0: { cellWidth: 37 }, 1: { cellWidth: 63 }, 2: { cellWidth: 80 } });
-    section('Referencias para localizar el registro');
-    table([], [['ID interno de solicitud', request.id], ['Documento emitido', pdfDate(generatedAt)], ['Actualización del registro', pdfDate(request.updatedAt)]], { 0: { cellWidth: 48, fontStyle: 'bold' } });
-    table([], [['Alcance', 'Documento de control interno generado con el estado registrado al momento de la descarga. No es un comprobante bancario ni una factura fiscal. El estado puede cambiar posteriormente; cotejar el número de solicitud y de orden en Financial Hub.']], { 0: { cellWidth: 25, fontStyle: 'bold' } });
+    ]), { 0: { cellWidth: 10 }, 1: { cellWidth: 21 }, 2: { cellWidth: 35 }, 3: { cellWidth: 46 }, 4: { cellWidth: 26 }, 5: { cellWidth: 42, halign: 'right' } });
+    table([], [[`${items.length} CASOS · TOTAL`, `$ ${money(request.totalAmount)}`]], { 0: { fontStyle: 'bold', cellWidth: 120 }, 1: { fontStyle: 'bold', halign: 'right', cellWidth: 60 } });
+    if (request.payment) {
+        section('Pago y respaldo bancario', 95);
+        table([], [
+            ['Fecha efectiva', pdfDate(request.payment.date || request.paidAt)],
+            ['Importe pagado', `$ ${money(request.payment.amount)}`],
+            ['Cuenta de origen', text(request.payment.account)],
+            ['Referencia bancaria', text(request.payment.reference)],
+            ['Comprobante', request.payment.receipt?.originalName || request.payment.receipt?.fileName || 'Sin comprobante adjunto (registro anterior)'],
+            ['Registrado por', request.payment.recordedByName || text(request.payment.recordedByUid)],
+            ['Fecha de registro', pdfDate(request.payment.recordedAt)],
+            ...(request.payment.receipt ? [['Cotejo del comprobante', 'Confirmado por administración al registrar el pago.']] : [])
+        ], { 0: { cellWidth: 45, fontStyle: 'bold' } }, { pageBreak: 'avoid' });
+    }
+    section('Trazabilidad de la solicitud');
+    const invoiceActions = /^(UPLOAD|VERIFY|INVOICE_UPLOADED|INVOICE_VERIFIED)(_|$)/;
+    const displayState = state => ['APPROVED_WAITING_INVOICE', 'INVOICE_REVIEW', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA'].includes(state) ? 'Aprobada' : payoutLabels[state] || state;
+    const actions = [...(request.history || []), ...events].filter(entry => !invoiceActions.test(entry.action || '')).sort((a, b) => (+asDate(a.at) || 0) - (+asDate(b.at) || 0));
+    table([['Fecha / hora', 'Acción y responsable', 'Estado / observaciones']], actions.length ? actions.map(entry => [
+        pdfDate(entry.at), `${actionLabel(entry.action)}\n${entry.actorName || entry.byUid || entry.byRole || 'Usuario no registrado'}`,
+        [entry.toStatus && displayState(entry.toStatus), entry.note].filter(Boolean).join('\n') || '-'
+    ]) : [['-', 'Sin historial disponible', 'Registro histórico sin eventos.']], { 0: { cellWidth: 38 }, 1: { cellWidth: 65 }, 2: { cellWidth: 77 } });
+    section('Referencia de control', 40);
+    table([], [['ID interno', request.id], ['Alcance', 'Documento de control interno. No es un comprobante bancario ni una factura fiscal. Consultar el estado vigente por número de solicitud u orden en Financial Hub.']], { 0: { cellWidth: 30, fontStyle: 'bold' } }, { pageBreak: 'avoid' });
     const pages = document.getNumberOfPages();
     for (let page = 1; page <= pages; page++) {
         document.setPage(page);
-        document.setFillColor(15, 23, 42); document.rect(0, 0, 210, 37, 'F');
-        document.setFont('helvetica', 'bold'); document.setFontSize(17); document.setTextColor(255); document.text('VERAX', 15, 12);
-        document.setFontSize(11); document.text(title, 195, 12, { align: 'right' });
-        document.setFont('helvetica', 'normal'); document.setFontSize(9); document.text(`${number}${request.orderNumber ? ` / ${request.orderNumber}` : ''}`, 15, 22);
-        document.text(`Estado: ${status}`, 15, 30);
-        document.setTextColor(90); document.setFontSize(8); document.text(`${number} | Emitido: ${pdfDate(generatedAt)}`, 15, 287); document.text(`${page} / ${pages}`, 195, 287, { align: 'right' });
+        document.addImage(logo, 'JPEG', 13, 5, 66, 30.16, 'verax-logo');
+        document.setFont('helvetica', 'bold'); document.setFontSize(14); document.setTextColor(...ink); document.text(title, 195, 16, { align: 'right' });
+        document.setFontSize(11); document.setTextColor(...red); document.text(request.orderNumber || number, 195, 24, { align: 'right' });
+        document.setFont('helvetica', 'normal'); document.setFontSize(9); document.setTextColor(...ink); document.text(`Estado: ${status}`, 195, 32, { align: 'right' });
+        document.setDrawColor(...red); document.setLineWidth(0.7); document.line(15, 39, 195, 39);
+        document.setDrawColor(210); document.setLineWidth(0.2); document.line(15, 280, 195, 280);
+        document.setTextColor(90); document.setFontSize(8); document.text(`${number} | Emitido: ${pdfDate(generatedAt)}`, 15, 286); document.text(`${page} / ${pages}`, 195, 286, { align: 'right' });
     }
     return { document, filename: `${request.orderNumber || number}_${request.status}.pdf`.replace(/[^a-zA-Z0-9_.-]/g, '_') };
 }

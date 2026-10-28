@@ -30,7 +30,7 @@ Descarga PDF desde el detalle, tanto para administración como para el analista 
 
 Pago: fecha efectiva, importe exacto, cuenta de origen y referencia bancaria. El servicio coteja el detalle contra las facturas y el total de la orden. La combinación normalizada cuenta/referencia no puede reutilizarse en otra orden. No es una conciliación bancaria automática: cuenta y referencia son datos declarados por administración. Esta versión registra pagos completos; no introduce pagos parciales ni transferencias reales.
 
-`analystPayments/{requestId}` guarda un único pago vinculado a la solicitud, preparado como fuente del futuro módulo de egresos. No se duplica un egreso por cada caso. El comprobante adjunto en este circuito es la factura del analista, no el comprobante bancario.
+`analystPayments/{requestId}` guarda un único pago vinculado a la solicitud, preparado como fuente del futuro módulo de egresos. No se duplica un egreso por cada caso. Cada nuevo pago exige un comprobante bancario PDF/JPG/PNG de hasta 10 MB y confirmación administrativa de cotejo de beneficiario, importe, fecha y referencia. El archivo se guarda en `payment_receipts/{requestId}` y es inmutable. El servidor verifica pertenencia, uploader, tamaño, tipo y firma inicial del archivo; registra generación, SHA-256 y quién/cuándo cotejó el pago. Esto valida el respaldo documental, no la autenticidad ni la acreditación bancaria. Los registros pagados anteriores siguen visibles aunque no tengan adjunto.
 
 ## Compatibilidad y límites técnicos
 
@@ -41,7 +41,7 @@ El límite de cinco desaparece, pero se conserva el límite técnico de tamaño 
 ## Validación
 
 - `npm test`: unidades y regresiones OCR/estados masivos.
-- `npm run test:rules`: reglas más servicio sobre Firestore Emulator; nunca producción.
+- `npm run test:rules`: reglas más servicio sobre Firestore y Storage Emulator; nunca producción.
 - Solicitudes de 1, 5, 6, 20, 50, 100 y 300 casos; cursor y recuperación; concurrencia; doble clic; copias inexistentes; conflicto tardío y liberación; referencia bancaria repetida; ciclo de 100 casos; compatibilidad histórica.
 - `npm run build` y lint de componentes nuevos.
 - Pendiente: validación visual en navegador habilitado y prueba de punta a punta de callable + trigger + Storage en un proyecto Firebase de prueba. Las pruebas locales del servicio ejecutan los pasos del trigger directamente.
@@ -50,9 +50,19 @@ El límite de cinco desaparece, pero se conserva el límite técnico de tamaño 
 
 1. Autenticar Firebase CLI con la cuenta del proyecto; verificar facturación/Cloud Functions, región, APIs requeridas y bucket Storage. No guardar claves privadas en Vercel ni en el repositorio.
 2. En un proyecto de prueba, instalar `npm ci --prefix functions`, desplegar el codebase `payouts` y las reglas; validar llamadas autenticadas, trigger automático, autorización cruzada y archivo PDF real. Verificar permisos de la cuenta de ejecución de Functions y el acceso de Storage a Firestore para sus reglas.
-3. Antes de producción, verificar otras rutas de Storage desplegadas y compatibilizar reglas. Este paquete contempla `payout_receipts` y `liquidations`.
+3. Antes de producción, verificar otras rutas de Storage desplegadas y compatibilizar reglas. Este paquete contempla `payout_receipts`, `payment_receipts` y `liquidations`.
 4. Preparar una ventana de actualización: desplegar Functions (`firebase deploy --only functions:payouts --project PROJECT_ID`), luego reglas de Firestore/Storage y el frontend coordinadamente. Las versiones antiguas de la web dejarán de poder enviar operaciones directas y deben recargarse.
 5. Confirmar versión de frontend, numeración, búsqueda, creación de más de cinco casos y ciclo completo en el entorno de prueba. No crear pagos ficticios en producción para probar.
 6. Monitorear jobs en fases no terminales y errores. No desactivar el servicio ni restaurar reglas anteriores mientras existan jobs activos. Un rollback requiere detener nuevas solicitudes, resolver operaciones pendientes y mantener accesible el historial v2.
 
 La sesión local no tiene una cuenta autorizada de Firebase CLI. El paquete no debe publicarse solo en Vercel: hacerlo sin Functions dejaría indisponible la creación de solicitudes.
+
+## PDF corporativo y comprobante bancario
+
+El PDF usa el logo original suministrado por Verax, negro y rojo corporativo, tipografía de mayor tamaño y una banda destacada para el total. No muestra el campo moneda ni el circuito de recepción/validación de la factura del analista; los eventos históricos siguen conservados en la base. Muestra los casos completos, identificadores SOL/OP, estado, acciones relevantes y datos del pago con el nombre del comprobante bancario. Los importes se expresan en pesos.
+
+La eliminación del circuito de factura se aplicó al documento; quitar sus pasos también de la aplicación quedó sujeto a la aclaración de alcance consultada al usuario.
+
+El formulario permite adjuntar el respaldo y exige cotejo manual antes de confirmar. Si cambia un dato del pago, se debe confirmar el cotejo nuevamente. Un error después de cargar el archivo conserva su referencia para reintentar sin duplicar la carga. La pantalla de detalle permite abrir el comprobante asociado. Archivos cargados y abandonados no generan pagos; no se purgan automáticamente en esta versión.
+
+Validación adicional: firmas de PDF/JPEG/PNG, metadata obtenida por servidor, permisos Storage por rol y orden, inmutabilidad, acceso del analista solo al adjunto confirmado y PDF de 300 casos sin omisiones. Revisión visual del ejemplo de 35 casos en tres páginas. Sigue pendiente la prueba de punta a punta de callable/trigger/Storage en Firebase de prueba y la revisión interactiva en navegador.

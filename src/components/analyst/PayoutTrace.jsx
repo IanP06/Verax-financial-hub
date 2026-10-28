@@ -48,13 +48,19 @@ export default function PayoutTrace({ request }) {
             if (url && /^https:\/\//.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
         } catch { setError('No se pudo abrir el comprobante.'); }
     };
+    const openBankReceipt = async () => {
+        try {
+            const url = await getDownloadURL(ref(getStorage(), request.payment.receipt.storagePath));
+            window.open(url, '_blank', 'noopener,noreferrer');
+        } catch { setError('No se pudo abrir el comprobante bancario.'); }
+    };
     return <section className="space-y-3 text-sm text-slate-800 dark:text-slate-100">
         <div className="flex flex-wrap gap-3 items-center"><strong>{requestNumber(request)}</strong><span>{request.orderNumber || 'Orden de pago pendiente de aprobación'}</span><button className="text-blue-500 underline" onClick={exportCSV}>Exportar detalle CSV</button><button className="bg-blue-600 text-white rounded px-3 py-2 disabled:opacity-50" disabled={pdfLoading || !!request.activeOperation || request.status === 'PROCESSING'} onClick={exportPDF}>{pdfLoading ? 'Generando PDF…' : request.orderNumber ? 'Descargar orden PDF' : 'Descargar solicitud PDF'}</button></div>
         <p>{items.length} casos · Total registrado: {money(request.totalAmount)}</p>
         {request.processingError && <p role="alert" className="text-red-600">{request.processingError}</p>}
         {error && <p role="alert" className="text-red-600">{error}</p>}
         {request.invoiceReceipt && <button onClick={openReceipt} className="text-blue-500 underline">Abrir factura del analista</button>}
-        {request.payment && <div className="rounded border border-green-600 p-3"><strong>Pago registrado</strong><p>{request.payment.date} · {money(request.payment.amount)} · {request.payment.account}</p><p>Referencia bancaria: {request.payment.reference}</p><p>Registrado por: {request.payment.recordedByUid}</p></div>}
+        {request.payment && <div className="rounded border border-green-600 p-3"><strong>Pago registrado</strong><p>{request.payment.date} · {money(request.payment.amount)} · {request.payment.account}</p><p>Referencia bancaria: {request.payment.reference}</p><p>Registrado por: {request.payment.recordedByName || request.payment.recordedByUid}</p>{request.payment.receipt && <><p>Cotejo del comprobante confirmado al registrar el pago.</p><button onClick={openBankReceipt} className="text-blue-500 underline">Abrir comprobante bancario · {request.payment.receipt.originalName}</button></>}</div>}
         <div className="overflow-auto max-h-80"><table className="w-full text-left"><thead><tr><th>Factura</th><th>Siniestro</th><th>Aseguradora</th><th className="text-right">Monto por caso</th></tr></thead><tbody>{items.map(item => <tr key={item.id}><td>{item.nroFactura}</td><td>{item.siniestro}</td><td>{item.aseguradora}</td><td className="text-right whitespace-nowrap">{money(item.total)}</td></tr>)}</tbody></table></div>
         <h4 className="font-bold">Historial de la solicitud</h4>
         {[...(request.history || []), ...events].map((entry, index) => <p key={entry.id || index}>{new Date(entry.at).toLocaleString('es-AR')} · {entry.action} · {entry.actorName || entry.byUid || entry.byRole || 'Registro anterior'} {entry.note && `· ${entry.note}`}</p>)}

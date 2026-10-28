@@ -17,9 +17,9 @@ test('upload does not authorize payment and payment must match amount/date/refer
     const uploaded = transition({ status: 'APPROVED_WAITING_INVOICE' }, 'UPLOAD', { receipt: {} }, true, now);
     assert.equal(uploaded.status, 'INVOICE_REVIEW');
     const req = { status: 'READY_TO_PAY', totalCents: 10000, invoiceStatus: 'UPLOADED' };
-    const payment = { date: '2026-10-28', amount: 100, account: 'Banco', reference: '123' };
+    const payment = { receiptReviewed: true, receipt: { storagePath: 'payment_receipts/test/test.pdf' }, date: '2026-10-28', amount: 100, account: 'Banco', reference: '123' };
     assert.throws(() => transition(req, 'PAY', payment, true, now));
     assert.equal(transition({ ...req, invoiceStatus: 'VERIFIED' }, 'PAY', payment, true, now).status, 'PAGO');
-    for (const change of [{ amount: 101 }, { date: '2026-10-29' }, { reference: '' }]) assert.throws(() => transition(req, 'PAY', { ...payment, ...change }, false, now));
+    for (const change of [{ receiptReviewed: false }, { receipt: null }, { amount: 101 }, { date: '2026-10-29' }, { reference: '' }]) assert.throws(() => transition(req, 'PAY', { ...payment, ...change }, false, now));
     assert.throws(() => transition({ status: 'PAGO' }, 'REJECT', { reason: 'error' }, false, now));
 });

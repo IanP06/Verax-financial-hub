@@ -5,7 +5,7 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const CHUNK = 75;
 const event = (uid, role, action, now, extra = {}) => ({ byUid: uid, byRole: role, action, at: now.toISOString(), ...extra });
 // Admin SDK only. Client security rules deny writes to this ledger and its jobs.
-export function payoutService(db, { now = () => new Date() } = {}) {
+export function payoutService(db, { now = () => new Date(), verifyPaymentReceipt = async () => { throw new DomainError('No se pudo verificar el comprobante bancario.'); } } = {}) {
     const ref = path => db.doc(path);
     async function command(uid, data) {
         requireValue(uid, 'Iniciá sesión nuevamente.');
@@ -87,6 +87,11 @@ export function payoutService(db, { now = () => new Date() } = {}) {
                     tx.set(counterRef, { value: sequence });
                 }
                 if (data.action === 'PAY') {
+                    const receipt = await verifyPaymentReceipt(uid, requestId, payload.receipt);
+                    changes.payment.receipt = receipt;
+                    changes.payment.receiptReviewedByUid = uid;
+                    changes.payment.receiptReviewedAt = timestamp.toISOString();
+                    changes.payment.recordedByName = profile.displayName || uid;
                     const paymentKey = hash(`${nameKey(changes.payment.account)}:${nameKey(changes.payment.reference)}`);
                     const paymentRef = ref(`payoutPaymentReferences/${paymentKey}`);
                     const duplicate = await tx.get(paymentRef);

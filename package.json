@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-verax-tests \"node --test tests/firestore.rules.integration.mjs tests/payoutService.integration.mjs\"",
+    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-verax-tests \"node --test --test-concurrency=1 tests/firestore.rules.integration.mjs tests/payoutService.integration.mjs tests/storage.rules.integration.mjs\"",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",

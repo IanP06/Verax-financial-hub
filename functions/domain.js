@@ -64,6 +64,7 @@ export function transition(request, action, payload, needsInvoice, now) {
         return { status: 'READY_TO_PAY', invoiceState: 'PENDIENTE_PAGO', invoiceStatus: 'VERIFIED' };
     }
     if (action === 'PAY') {
+        requireValue(payload.receiptReviewed === true && payload.receipt?.storagePath, 'Adjuntá el comprobante y confirmá el cotejo de beneficiario, importe, fecha y referencia.');
         requireValue(['READY_TO_PAY', 'PENDIENTE_PAGO', 'APPROVED_SCHEDULED'].includes(state), 'La orden no está lista para pagar.');
         requireValue(!needsInvoice || request.invoiceStatus === 'VERIFIED', 'Primero debe verificarse la factura del analista.');
         requireValue(cents(payload.amount) === (request.totalCents ?? cents(request.totalAmount)), 'El importe pagado debe coincidir con el total de la orden.');
