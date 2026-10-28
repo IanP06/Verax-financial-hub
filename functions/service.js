@@ -18,8 +18,8 @@ export function payoutService(db, { now = () => new Date(), verifyPaymentReceipt
         const payload = data.payload || {};
         const fingerprint = hash(JSON.stringify({ action: data.action, requestId, payload }));
         return db.runTransaction(async tx => {
-            const [profileDoc, existingJob, reqDoc, rulesDoc] = await Promise.all([
-                tx.get(ref(`userProfiles/${uid}`)), tx.get(jobRef), tx.get(reqRef), tx.get(ref('settings/analystRules'))
+            const [profileDoc, existingJob, reqDoc] = await Promise.all([
+                tx.get(ref(`userProfiles/${uid}`)), tx.get(jobRef), tx.get(reqRef)
             ]);
             const profile = profileDoc.data();
             requireValue(profile && profile.isActive !== false, 'Usuario inactivo o sin perfil.');
@@ -64,21 +64,13 @@ export function payoutService(db, { now = () => new Date(), verifyPaymentReceipt
                 changes = { status: 'SUBMITTED', invoiceState: 'PENDIENTE_APROBACION' };
             } else {
                 requireValue(request && !request.activeOperation, 'La solicitud no existe o tiene una operación en curso.');
-                requireValue(data.action === 'UPLOAD' ? (role === 'analyst' && request.analystUid === uid) : role === 'admin', 'No tenés permiso para esta acción.');
+                requireValue(role === 'admin', 'No tenés permiso para esta acción.');
                 ids = request.invoiceIds || [];
                 requireValue(ids.length > 0, 'La solicitud no contiene casos.');
                 const ownerDoc = await tx.get(ref(`userProfiles/${request.analystUid}`));
                 const owner = ownerDoc.data();
                 requireValue(owner, 'El perfil del analista no existe.');
-                const rule = (rulesDoc.data()?.rules || []).find(r => nameKey(r.name) === nameKey(owner.analystKey || owner.displayName));
-                const requiresInvoice = rule?.requiresInvoice === true || (data.action !== 'APPROVE' && request.requiresInvoiceSnapshot === true);
-                if (data.action === 'UPLOAD') {
-                    const receipt = payload.receipt;
-                    requireValue(receipt && typeof receipt.fileName === 'string' && /^[a-zA-Z0-9_.-]+\.pdf$/i.test(receipt.fileName), 'Comprobante inválido.');
-                    requireValue(receipt.storagePath === `payout_receipts/${requestId}/${receipt.fileName}`, 'Ruta de comprobante inválida.');
-                    payload.receipt = { fileName: receipt.fileName, storagePath: receipt.storagePath, uploadedAt: timestamp.toISOString(), uploadedByUid: uid };
-                }
-                changes = transition(request, data.action, payload, requiresInvoice, timestamp);
+                changes = transition(request, data.action, payload, timestamp);
                 if (data.action === 'APPROVE' && !request.orderNumber) {
                     const counterRef = ref(`payoutCounters/OP-${year}`);
                     const counter = await tx.get(counterRef);
@@ -184,7 +176,7 @@ export function payoutService(db, { now = () => new Date(), verifyPaymentReceipt
                     { fromStatus: req.status, toStatus: finalStatus, note: job.error || changes.rejectionReason || '', jobId });
                 tx.update(reqRef, { ...(failed ? {} : changes), status: finalStatus, activeOperation: null, processingAction: null,
                     processedCount: cursor, updatedAt: timestamp, ...(job.action === 'CREATE' ? { totalCents: failed ? 0 : totalCents, totalAmount: failed ? 0 : totalCents / 100 } : {}),
-                    ...(job.action === 'APPROVE' ? { approvedAt: timestamp } : {}), ...(job.action === 'VERIFY' ? { verifiedAt: timestamp } : {}),
+                    ...(job.action === 'APPROVE' ? { approvedAt: timestamp } : {}),
                     ...(job.action === 'REJECT' ? { rejectedAt: timestamp } : {}), ...(job.error ? { processingError: job.error } : {}) });
                 tx.create(ref(`payoutRequests/${job.requestId}/events/${jobId}-end`), finished);
                 if (job.action === 'PAY' && !failed) tx.create(ref(`analystPayments/${job.requestId}`), { ...changes.payment, requestId: job.requestId, requestNumber: req.requestNumber || `LEG-${job.requestId}`, orderNumber: req.orderNumber || null, analystUid: req.analystUid, caseCount: req.invoiceIds.length });

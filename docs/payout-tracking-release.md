@@ -12,8 +12,8 @@ Cada solicitud nueva recibe un número correlativo anual `SOL-AAAA-000001`. Al a
 - El analista envía IDs; el servidor verifica perfil activo, pertenencia, IMPAGO en ambos campos, ausencia de otra solicitud y 40 días completos en el calendario de Buenos Aires.
 - Los importes se calculan en centavos a partir de la factura principal. El porcentaje de ahorro no se suma como dinero.
 - Los casos quedan reservados mientras se valida la creación. Ante un conflicto se liberan las reservas propias y queda una solicitud FAILED con explicación; nunca se presenta como lista para aprobar.
-- Estados: PROCESSING → SUBMITTED → APPROVED_WAITING_INVOICE → INVOICE_REVIEW → READY_TO_PAY → PAGO. Si no requiere factura, aprobar lleva a READY_TO_PAY. Rechazar libera los casos y conserva el detalle original.
-- Subir la factura no equivale a verificarla. Solo administración la verifica.
+- Estados: PROCESSING → SUBMITTED → READY_TO_PAY → PAGO. Aprobar siempre lleva directamente a pendiente de pago. Rechazar libera los casos y conserva el detalle original.
+- La recepción y validación de factura del analista se realiza externamente por WhatsApp. Se retiran UPLOAD/VERIFY y las nuevas cargas de factura; los adjuntos históricos conservan acceso de lectura.
 - Cualquier operación en curso impide iniciar otra sobre la misma solicitud. Los reintentos utilizan un identificador estable.
 - Cada bloque y su cursor se confirman juntos en una transacción. El trigger soporta entregas duplicadas. Los fallos transitorios se reintentan; conflictos en una aplicación ya iniciada quedan BLOCKED para revisión y reanudación por administración.
 - Los casos vinculados no pueden cambiar de importe, titularidad ni estado mediante escrituras del navegador. Administración puede seguir actualizando cobros; la sincronización histórica de copias se conserva.
@@ -61,7 +61,7 @@ La sesión local no tiene una cuenta autorizada de Firebase CLI. El paquete no d
 
 El PDF usa el logo original suministrado por Verax, negro y rojo corporativo, tipografía de mayor tamaño y una banda destacada para el total. No muestra el campo moneda ni el circuito de recepción/validación de la factura del analista; los eventos históricos siguen conservados en la base. Muestra los casos completos, identificadores SOL/OP, estado, acciones relevantes y datos del pago con el nombre del comprobante bancario. Los importes se expresan en pesos.
 
-La eliminación del circuito de factura se aplicó al documento; quitar sus pasos también de la aplicación quedó sujeto a la aclaración de alcance consultada al usuario.
+Por decisión del usuario, el circuito de factura se elimina tanto del PDF como de la app. Las reglas históricas requiresInvoice ya no condicionan aprobar ni pagar. Los estados históricos APPROVED_WAITING_INVOICE, NEEDS_INVOICE, PENDIENTE_FACTURA e INVOICE_REVIEW se muestran como pendiente de pago y pueden continuar con comprobante bancario, sin migrar ni borrar su historial. No se admiten pagos desde solicitudes aún no aprobadas.
 
 El formulario permite adjuntar el respaldo y exige cotejo manual antes de confirmar. Si cambia un dato del pago, se debe confirmar el cotejo nuevamente. Un error después de cargar el archivo conserva su referencia para reintentar sin duplicar la carga. La pantalla de detalle permite abrir el comprobante asociado. Archivos cargados y abandonados no generan pagos; no se purgan automáticamente en esta versión.
 

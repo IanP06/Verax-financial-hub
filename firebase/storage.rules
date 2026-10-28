@@ -12,16 +12,12 @@ service firebase.storage {
     }
     match /payout_receipts/{id}/{file} {
       allow read: if admin() || (active() && requestData(id).analystUid == request.auth.uid);
-      allow create: if active() && requestData(id).analystUid == request.auth.uid &&
-        requestData(id).status in ['APPROVED_WAITING_INVOICE','NEEDS_INVOICE','PENDIENTE_FACTURA'] &&
-        requestData(id).get('activeOperation', null) == null &&
-        request.resource.size <= 10 * 1024 * 1024 && request.resource.contentType == 'application/pdf' && file.matches('.*[.]pdf');
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
     match /payment_receipts/{id}/{file} {
       allow read: if admin() || (active() && requestData(id).analystUid == request.auth.uid &&
         requestData(id).get('payment', {}).get('receipt', {}).get('storagePath', '') == 'payment_receipts/' + id + '/' + file);
-      allow create: if resource == null && admin() && requestData(id).status in ['READY_TO_PAY','PENDIENTE_PAGO','APPROVED_SCHEDULED'] &&
+      allow create: if resource == null && admin() && requestData(id).status in ['READY_TO_PAY', 'PENDIENTE_PAGO', 'APPROVED_SCHEDULED', 'APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW'] &&
         requestData(id).get('activeOperation', null) == null &&
         request.resource.size > 0 && request.resource.size <= 10 * 1024 * 1024 &&
         request.resource.metadata.uploadedByUid == request.auth.uid && request.resource.metadata.requestId == id &&

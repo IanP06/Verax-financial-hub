@@ -29,7 +29,7 @@ export function clearCreateRetryKey() {
 }
 
 export const payoutLabels = { PROCESSING: 'Procesando selección', SUBMITTED: 'Solicitada', PENDIENTE_APROBACION: 'Solicitada',
-    APPROVED_WAITING_INVOICE: 'Aprobada · falta factura', NEEDS_INVOICE: 'Aprobada · falta factura', PENDIENTE_FACTURA: 'Aprobada · falta factura',
-    INVOICE_REVIEW: 'Factura pendiente de validación', READY_TO_PAY: 'Pendiente de pago', PENDIENTE_PAGO: 'Pendiente de pago', APPROVED_SCHEDULED: 'Pago programado',
+    APPROVED_WAITING_INVOICE: 'Pendiente de pago', NEEDS_INVOICE: 'Pendiente de pago', PENDIENTE_FACTURA: 'Pendiente de pago',
+    INVOICE_REVIEW: 'Pendiente de pago', READY_TO_PAY: 'Pendiente de pago', PENDIENTE_PAGO: 'Pendiente de pago', APPROVED_SCHEDULED: 'Pago programado',
     REJECTED: 'Rechazada', FAILED: 'No presentada · revisar casos', PAGO: 'Pagada', PAID: 'Pagada' };
 export const requestNumber = req => req.requestNumber || `LEG-${req.id}`;

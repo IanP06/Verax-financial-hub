@@ -13,13 +13,15 @@ test('amounts preserve cents and never count the savings percentage as money', (
     assert.equal(invoiceCents({ montoGestion: 100, ahorroAPagar: 25.50, plusPorAhorro: 5, viaticosAPagar: 10 }), 13550);
     assert.throws(() => invoiceCents({ totalAPagarAnalista: 'error' }));
 });
-test('upload does not authorize payment and payment must match amount/date/reference', () => {
-    const uploaded = transition({ status: 'APPROVED_WAITING_INVOICE' }, 'UPLOAD', { receipt: {} }, true, now);
-    assert.equal(uploaded.status, 'INVOICE_REVIEW');
-    const req = { status: 'READY_TO_PAY', totalCents: 10000, invoiceStatus: 'UPLOADED' };
+test('approval skips invoice workflow and legacy approved orders remain payable with bank proof', () => {
+    assert.equal(transition({ status: 'SUBMITTED', requiresInvoiceSnapshot: true }, 'APPROVE', {}, now).status, 'READY_TO_PAY');
     const payment = { receiptReviewed: true, receipt: { storagePath: 'payment_receipts/test/test.pdf' }, date: '2026-10-28', amount: 100, account: 'Banco', reference: '123' };
-    assert.throws(() => transition(req, 'PAY', payment, true, now));
-    assert.equal(transition({ ...req, invoiceStatus: 'VERIFIED' }, 'PAY', payment, true, now).status, 'PAGO');
-    for (const change of [{ receiptReviewed: false }, { receipt: null }, { amount: 101 }, { date: '2026-10-29' }, { reference: '' }]) assert.throws(() => transition(req, 'PAY', { ...payment, ...change }, false, now));
-    assert.throws(() => transition({ status: 'PAGO' }, 'REJECT', { reason: 'error' }, false, now));
+    for (const status of ['READY_TO_PAY', 'APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW']) {
+        const req = { status, totalCents: 10000, invoiceStatus: 'REQUIRED', requiresInvoiceSnapshot: true };
+        assert.equal(transition(req, 'PAY', payment, now).status, 'PAGO');
+        for (const change of [{ receiptReviewed: false }, { receipt: null }, { amount: 101 }, { date: '2026-10-29' }, { reference: '' }]) assert.throws(() => transition(req, 'PAY', { ...payment, ...change }, now));
+        for (const action of ['UPLOAD', 'VERIFY']) assert.throws(() => transition(req, action, {}, now), /Acción inválida/);
+    }
+    assert.throws(() => transition({ status: 'SUBMITTED', totalCents: 10000 }, 'PAY', payment, now), /lista para pagar/);
+    assert.throws(() => transition({ status: 'PAGO' }, 'REJECT', { reason: 'error' }, now));
 });

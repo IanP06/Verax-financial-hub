@@ -154,10 +154,7 @@ const AnalystTable = ({ invoices, onSelectionChange }) => {
         if (['PENDIENTE_APROBACION', 'PENDIENTE', 'EN_SOLICITUD'].includes(status)) {
             return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">PENDIENTE</span>;
         }
-        if (['PENDIENTE_FACTURA', 'NEEDS_INVOICE'].includes(status)) {
-            return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">FACTURA</span>;
-        }
-        if (['PENDIENTE_PAGO', 'READY_TO_PAY'].includes(status)) {
+        if (['READY_TO_PAY', 'PENDIENTE_PAGO', 'APPROVED_SCHEDULED', 'APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW'].includes(status)) {
             return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">A PAGAR</span>;
         }
         return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">{status || 'IMPAGO'}</span>;

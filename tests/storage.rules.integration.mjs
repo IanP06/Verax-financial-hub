@@ -43,3 +43,12 @@ test('upload blocked for paid or processing order and disallowed content type', 
         await assertFails(upload('admin'));
     }
 });
+
+test('legacy approved invoice states accept bank proof but new analyst invoice uploads are retired', async () => {
+    for (const status of ['APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW']) {
+        sequence++;
+        await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'payoutRequests/order'), { analystUid: 'ana', status }));
+        await assertSucceeds(upload('admin'));
+        await assertFails(uploadBytes(ref(env.authenticatedContext('ana').storage(), `payout_receipts/order/old-${sequence}.pdf`), new TextEncoder().encode('%PDF-test'), { contentType: 'application/pdf' }));
+    }
+});

@@ -12,12 +12,6 @@ const service = payoutService(getFirestore(), { verifyPaymentReceipt: (...args) 
 export const payoutCommand = onCall({ region: 'us-central1', timeoutSeconds: 120 }, async request => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Iniciá sesión.');
     try {
-        if (request.data?.action === 'UPLOAD') {
-            const path = request.data.payload?.receipt?.storagePath;
-            if (typeof path !== 'string' || !path.startsWith(`payout_receipts/${request.data.requestId}/`)) throw new DomainError('Comprobante inválido.');
-            const [metadata] = await getStorage().bucket().file(path).getMetadata();
-            if (metadata.contentType !== 'application/pdf' || Number(metadata.size) > 10 * 1024 * 1024) throw new DomainError('El comprobante debe ser PDF de hasta 10 MB.');
-        }
         return await service.command(request.auth.uid, request.data || {});
     } catch (error) {
         if (error instanceof DomainError) throw new HttpsError('failed-precondition', error.message);

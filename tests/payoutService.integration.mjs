@@ -60,16 +60,15 @@ test('failure in a later chunk releases all reservations and leaves an auditable
     assert.equal((await db.doc(`invoices/${ids[0]}`).get()).data().estadoPago, 'IMPAGO');
     assert.equal((await db.doc(`payoutRequests/${result.requestId}`).get()).data().totalCents, 0);
 });
-test('full 100-case lifecycle validates invoice before payment and records one payment', async () => {
+test('full 100-case lifecycle goes directly from approval to payment despite old invoice settings', async () => {
     await db.doc('settings/analystRules').set({ rules: [{ name: 'ANA', requiresInvoice: true }] });
     const result = await create(await seed(100)); await drain(result);
     await drain(await action(result.requestId, 'APPROVE'));
     let req = (await db.doc(`payoutRequests/${result.requestId}`).get()).data(); assert.match(req.orderNumber, /^OP-2026-/);
     const payment = { amount: 10025, date: '2026-10-28', account: 'Banco A', reference: 'TRANSFER-1' };
-    await assert.rejects(() => action(result.requestId, 'PAY', payment));
-    await drain(await action(result.requestId, 'UPLOAD', { receipt: { fileName: 'test.pdf', storagePath: `payout_receipts/${result.requestId}/test.pdf` } }));
-    await assert.rejects(() => action(result.requestId, 'PAY', payment));
-    await drain(await action(result.requestId, 'VERIFY')); await drain(await action(result.requestId, 'PAY', payment));
+    assert.equal(req.status, 'READY_TO_PAY'); assert.equal(req.requiresInvoiceSnapshot, false);
+    await assert.rejects(() => action(result.requestId, 'VERIFY'), /Acción inválida/);
+    await drain(await action(result.requestId, 'PAY', payment));
     req = (await db.doc(`payoutRequests/${result.requestId}`).get()).data(); assert.equal(req.status, 'PAGO');
     assert.equal(req.payment.receipt.sha256, 'test-hash'); assert.equal(req.payment.receiptReviewedByUid, 'admin');
     assert.equal((await db.collection('analystPayments').get()).size, 1);
@@ -134,4 +133,12 @@ test('payment cannot bypass server receipt verification or explicit review', asy
     await assert.rejects(() => unverified.command('admin', { requestId: result.requestId, action: 'PAY', operationId: operation(), payload }), /verificar el comprobante/);
     assert.equal((await db.doc(`payoutRequests/${result.requestId}`).get()).data().status, 'READY_TO_PAY');
     assert.equal((await db.collection('analystPayments').get()).size, 0);
+});
+
+for (const status of ['APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW']) test(`legacy ${status} can be paid without a new invoice step`, async () => {
+    const result = await create(await seed(1)); await drain(result); await drain(await action(result.requestId, 'APPROVE'));
+    await db.doc(`payoutRequests/${result.requestId}`).update({ status, requiresInvoiceSnapshot: true, invoiceStatus: 'REQUIRED', invoiceReceipt: { fileName: 'historical.pdf' } });
+    await drain(await action(result.requestId, 'PAY', { date: '2026-10-28', amount: 100.25, account: 'A', reference: status }));
+    const request = (await db.doc(`payoutRequests/${result.requestId}`).get()).data();
+    assert.equal(request.status, 'PAGO'); assert.equal(request.invoiceReceipt.fileName, 'historical.pdf');
 });

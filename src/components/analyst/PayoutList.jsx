@@ -5,14 +5,12 @@ import { getStorage, ref, uploadBytes } from 'firebase/storage';
 import { db } from '../../lib/firebase';
 import { payoutCommand, payoutLabels, requestNumber, clearCreateRetryKey } from '../../utils/payoutClient';
 import PayoutTrace from './PayoutTrace';
-import useAnalystStore from '../../store/useAnalystStore';
 
 export default function PayoutList({ requests, admin = false }) {
     const [query, setQuery] = useState(''), [status, setStatus] = useState(''), [expanded, setExpanded] = useState(null);
     const [start, setStart] = useState(''), [end, setEnd] = useState('');
     const [busy, setBusy] = useState(null), [error, setError] = useState(''), [matches, setMatches] = useState(new Set()), [searching, setSearching] = useState(false);
     const [payment, setPayment] = useState(null);
-    const upload = useAnalystStore(state => state.uploadInvoiceReceipt);
     useEffect(() => {
         let cancelled = false;
         if (!query.trim()) return;
@@ -62,11 +60,11 @@ export default function PayoutList({ requests, admin = false }) {
     };
     const filtered = requests.filter(request => {
         const date = request.createdAt?.toDate?.().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }) || '';
-        return (!query.trim() || matches.has(request.id)) && (!status || request.status === status) && (!start || date >= start) && (!end || date <= end);
+        return (!query.trim() || matches.has(request.id)) && (!status || (payoutLabels[request.status] || request.status) === status) && (!start || date >= start) && (!end || date <= end);
     });
     return <div className="space-y-4 text-slate-900 dark:text-slate-100">
         <div className="flex flex-wrap gap-3"><input aria-label="Buscar solicitud" className="rounded border p-2 dark:bg-slate-800 flex-1 min-w-64" placeholder="N° solicitud, orden, analista, siniestro, factura o referencia" value={query} onChange={e => setQuery(e.target.value)} />
-            <select aria-label="Estado" className="rounded border p-2 dark:bg-slate-800" value={status} onChange={e => setStatus(e.target.value)}><option value="">Todos los estados</option>{[...new Set(requests.map(r => r.status))].map(value => <option key={value} value={value}>{payoutLabels[value] || value}</option>)}</select>
+            <select aria-label="Estado" className="rounded border p-2 dark:bg-slate-800" value={status} onChange={e => setStatus(e.target.value)}><option value="">Todos los estados</option>{[...new Set(requests.map(r => payoutLabels[r.status] || r.status))].map(value => <option key={value} value={value}>{value}</option>)}</select>
             <label>Desde <input type="date" value={start} onChange={e => setStart(e.target.value)} className="dark:bg-slate-800" /></label><label>Hasta <input type="date" value={end} onChange={e => setEnd(e.target.value)} className="dark:bg-slate-800" /></label>
         </div>
         {searching && <p>Buscando en solicitudes y casos…</p>}{error && <p role="alert" className="text-red-600">{error}</p>}
@@ -82,10 +80,8 @@ export default function PayoutList({ requests, admin = false }) {
                 {!request.activeOperation && admin && <>
                     {['SUBMITTED', 'PENDIENTE_APROBACION'].includes(request.status) && <button disabled={!!busy} onClick={() => confirm(`¿Aprobar ${requestNumber(request)}?`) && act(request, 'APPROVE')}>Aprobar</button>}
                     {['SUBMITTED', 'PENDIENTE_APROBACION', 'APPROVED_WAITING_INVOICE', 'INVOICE_REVIEW', 'READY_TO_PAY', 'PENDIENTE_PAGO', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA'].includes(request.status) && <button disabled={!!busy} onClick={() => { const reason = prompt('Motivo del rechazo:'); if (reason) act(request, 'REJECT', { reason }); }}>Rechazar</button>}
-                    {request.invoiceStatus === 'UPLOADED' && <button disabled={!!busy} onClick={() => confirm('¿Verificaste la factura y su importe contra la orden?') && act(request, 'VERIFY')}>Verificar factura</button>}
-                    {['READY_TO_PAY', 'PENDIENTE_PAGO', 'APPROVED_SCHEDULED'].includes(request.status) && <button disabled={!!busy || (request.requiresInvoiceSnapshot && request.invoiceStatus !== 'VERIFIED')} onClick={() => setPayment({ request, date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }), amount: request.totalAmount, account: '', reference: '' })}>Registrar pago realizado</button>}
+                    {['READY_TO_PAY', 'PENDIENTE_PAGO', 'APPROVED_SCHEDULED', 'APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW'].includes(request.status) && <button disabled={!!busy} onClick={() => setPayment({ request, date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }), amount: request.totalAmount, account: '', reference: '' })}>Registrar pago realizado</button>}
                 </>}
-                {!admin && !request.activeOperation && ['APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA'].includes(request.status) && <label className="text-blue-500 cursor-pointer">Adjuntar factura PDF<input aria-label="Adjuntar factura PDF" type="file" accept="application/pdf" disabled={!!busy} className="block" onChange={async e => { const file = e.target.files[0]; if (!file) return; setBusy(request.id); const result = await upload(request.id, file, request.analystUid); if (!result.success) setError(result.error); setBusy(null); }} /></label>}
                 {!admin && ['FAILED', 'REJECTED'].includes(request.status) && <button onClick={() => { clearCreateRetryKey(); alert('Podés volver a seleccionar los casos habilitados desde el dashboard.'); }}>Preparar nueva solicitud</button>}
             </div>
             {expanded === request.id && <PayoutTrace request={request} />}

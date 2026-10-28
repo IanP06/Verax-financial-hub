@@ -244,19 +244,6 @@ const useAnalystStore = create((set, get) => ({
             return { success: true, ...result };
         } catch (error) { return { success: false, error: error.message }; }
         finally { set({ loading: false }); }
-    },
-    uploadInvoiceReceipt: async (requestId, file) => {
-        set({ loading: true });
-        try {
-            if (file.type !== 'application/pdf' || file.size > 10 * 1024 * 1024) throw new Error('Seleccioná un PDF de hasta 10 MB.');
-            const { getStorage, ref, uploadBytes } = await import('firebase/storage');
-            const fileName = `${crypto.randomUUID()}.pdf`;
-            const storagePath = `payout_receipts/${requestId}/${fileName}`;
-            await uploadBytes(ref(getStorage(), storagePath), file, { contentType: 'application/pdf' });
-            await payoutCommand('UPLOAD', requestId, { receipt: { fileName, storagePath } });
-            return { success: true };
-        } catch (error) { return { success: false, error: error.message }; }
-        finally { set({ loading: false }); }
     }
 }));
 export default useAnalystStore;

@@ -44,29 +44,20 @@ export function snapshot(id, inv) {
         aseguradora: inv.aseguradora || inv.insurer || '-', fechaEmision: inv.fechaEmision || inv.fecha || inv.issueDate || '-',
         totalCents: invoiceCents(inv), total: invoiceCents(inv) / 100, currency: 'ARS' };
 }
-export function transition(request, action, payload, needsInvoice, now) {
+export function transition(request, action, payload, now) {
     const state = request.status;
     if (action === 'APPROVE') {
         requireValue(['SUBMITTED', 'PENDIENTE_APROBACION'].includes(state), 'La solicitud ya no está pendiente de aprobación.');
-        return { status: needsInvoice ? 'APPROVED_WAITING_INVOICE' : 'READY_TO_PAY', invoiceState: needsInvoice ? 'PENDIENTE_FACTURA' : 'PENDIENTE_PAGO', requiresInvoiceSnapshot: needsInvoice, invoiceStatus: needsInvoice ? 'REQUIRED' : 'NOT_REQUIRED' };
+        return { status: 'READY_TO_PAY', invoiceState: 'PENDIENTE_PAGO', requiresInvoiceSnapshot: false, invoiceStatus: 'NOT_REQUIRED' };
     }
     if (action === 'REJECT') {
         requireValue(['SUBMITTED', 'PENDIENTE_APROBACION', 'APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW', 'READY_TO_PAY', 'PENDIENTE_PAGO'].includes(state), 'No se puede rechazar en este estado.');
         requireValue(typeof payload.reason === 'string' && payload.reason.trim().length >= 3 && payload.reason.length <= 1000, 'Ingresá el motivo del rechazo.');
         return { status: 'REJECTED', invoiceState: 'IMPAGO', rejectionReason: payload.reason.trim() };
     }
-    if (action === 'UPLOAD') {
-        requireValue(['APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA'].includes(state), 'La solicitud no está esperando una factura.');
-        return { status: 'INVOICE_REVIEW', invoiceState: 'PENDIENTE_FACTURA', invoiceStatus: 'UPLOADED', invoiceReceipt: payload.receipt };
-    }
-    if (action === 'VERIFY') {
-        requireValue(['INVOICE_REVIEW', 'READY_TO_PAY', 'APPROVED_WAITING_INVOICE'].includes(state) && request.invoiceStatus === 'UPLOADED', 'No hay una factura pendiente de verificación.');
-        return { status: 'READY_TO_PAY', invoiceState: 'PENDIENTE_PAGO', invoiceStatus: 'VERIFIED' };
-    }
     if (action === 'PAY') {
         requireValue(payload.receiptReviewed === true && payload.receipt?.storagePath, 'Adjuntá el comprobante y confirmá el cotejo de beneficiario, importe, fecha y referencia.');
-        requireValue(['READY_TO_PAY', 'PENDIENTE_PAGO', 'APPROVED_SCHEDULED'].includes(state), 'La orden no está lista para pagar.');
-        requireValue(!needsInvoice || request.invoiceStatus === 'VERIFIED', 'Primero debe verificarse la factura del analista.');
+        requireValue(['READY_TO_PAY', 'PENDIENTE_PAGO', 'APPROVED_SCHEDULED', 'APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW'].includes(state), 'La orden no está lista para pagar.');
         requireValue(cents(payload.amount) === (request.totalCents ?? cents(request.totalAmount)), 'El importe pagado debe coincidir con el total de la orden.');
         requireValue(day(payload.date) <= day(localDate(now)), 'La fecha de pago no puede ser futura.');
         for (const field of ['account', 'reference']) requireValue(typeof payload[field] === 'string' && payload[field].trim().length > 0 && payload[field].length <= 200, 'Completá cuenta de origen y referencia bancaria.');
