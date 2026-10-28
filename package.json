@@ -9,7 +9,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lab": "node scripts/local-lab.mjs",
+    "lab:seed": "node scripts/seed-local-lab.mjs",
+    "test:lab": "firebase emulators:exec --config firebase.lab.json --project demo-verax-lab \"node scripts/test-local-lab.mjs\""
   },
   "dependencies": {
     "clsx": "^2.1.1",

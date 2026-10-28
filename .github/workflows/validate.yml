@@ -23,4 +23,7 @@ jobs:
       - run: node --check functions/index.js
       - run: npm test
       - run: npm run test:rules
+      - run: npm run test:lab
+        env:
+          FUNCTIONS_DISCOVERY_TIMEOUT: 60
       - run: npm run build

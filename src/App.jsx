@@ -18,7 +18,7 @@ import { applyTheme, getInitialTheme } from "./utils/theme";
 
 // === SMOKE TEST IMPORTS ===
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "./lib/firebase";
+import { db, isLocalLab } from "./lib/firebase";
 // ==========================
 
 // Layout Wrapper for Admin to include Sidebar
@@ -70,6 +70,8 @@ function App() {
   // ========================
 
   return (
+    <>
+    {isLocalLab && <div role="status" className="sticky top-0 z-[100] bg-amber-300 px-4 py-2 text-center text-sm font-bold text-slate-950">LABORATORIO LOCAL · Datos ficticios · Sin conexión a producción</div>}
     <AuthProvider>
       <Router>
         <Routes>
@@ -100,6 +102,7 @@ function App() {
         </Routes>
       </Router>
     </AuthProvider>
+    </>
   );
 }
 

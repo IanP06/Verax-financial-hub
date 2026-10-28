@@ -116,3 +116,9 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Local artifacts and private environment overrides
+tmp/
+output/
+.env.local
+.env.*.local
