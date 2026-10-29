@@ -39,7 +39,7 @@ try {
     await assert.rejects(() => getDoc(doc(other.db, 'payoutRequests', created.requestId)));
     await admin.command('APPROVE', created.requestId);
     request = await waitState(admin.db, created.requestId, 'READY_TO_PAY');
-    assert.match(request.orderNumber, /^OP-/);
+    assert.match(request.orderNumber, /^\d{8}_\d{2}_\d{4,}$/); assert.equal(request.orderNumber, request.requestNumber);
     const { buildPayoutPdf } = await import('../src/utils/payoutPdf.js');
     const items = (await getDocs(collection(admin.db, 'payoutRequests', created.requestId, 'items'))).docs.map(d => d.data());
     const pdf = buildPayoutPdf({ ...request, id: created.requestId }, items).document.output('arraybuffer');

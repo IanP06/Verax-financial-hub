@@ -7,5 +7,5 @@ export default function PayoutRequests() {
     useEffect(() => onSnapshot(query(collection(db, 'payoutRequests'), orderBy('createdAt', 'desc')), snapshot => {
         setRequests(snapshot.docs.map(d => ({ ...d.data(), id: d.id }))); setLoading(false);
     }, () => { setError('No se pudieron cargar las solicitudes.'); setLoading(false); }), []);
-    return <div className="space-y-5"><h2 className="text-2xl font-bold dark:text-white">Solicitudes y órdenes de pago</h2>{error && <p role="alert">{error}</p>}{loading ? <p>Cargando…</p> : <PayoutList requests={requests} admin />}</div>;
+    return <div className="space-y-6"><h2 className="text-2xl font-bold text-gray-900 dark:text-white">Solicitudes de Pago</h2>{error && <p role="alert">{error}</p>}{loading ? <p>Cargando…</p> : <PayoutList requests={requests} admin />}</div>;
 }

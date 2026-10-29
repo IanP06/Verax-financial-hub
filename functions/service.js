@@ -1,5 +1,6 @@
+import { reservePayoutNumber } from './payoutNumbers.js';
 import { createHash } from 'node:crypto';
-import { DomainError, requireValue, nameKey, eligible, snapshot, transition, invoiceCents, cents, localDate } from './domain.js';
+import { DomainError, requireValue, nameKey, eligible, snapshot, transition, invoiceCents, cents } from './domain.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const CHUNK = 75;
@@ -41,7 +42,6 @@ export function payoutService(db, { now = () => new Date(), verifyPaymentReceipt
                 tx.create(jobRef, { requestId, fingerprint, phase: 'DONE' });
                 return { requestId, jobId };
             }
-            const year = localDate(timestamp).slice(0, 4);
             let request = reqDoc.data();
             let ids, changes;
             if (data.action === 'CREATE') {
@@ -53,13 +53,10 @@ export function payoutService(db, { now = () => new Date(), verifyPaymentReceipt
                 requireValue(Buffer.byteLength(JSON.stringify(ids)) < 500000, 'La selección excede el tamaño de una solicitud. Contactá a administración.');
                 const analystName = profile.analystKey || profile.displayName;
                 requireValue(analystName, 'El perfil no tiene analista asignado.');
-                const counterRef = ref(`payoutCounters/SOL-${year}`);
-                const counter = await tx.get(counterRef);
-                const sequence = (counter.data()?.value || 0) + 1;
-                request = { schemaVersion: 2, requestNumber: `SOL-${year}-${String(sequence).padStart(6, '0')}`, analystUid: uid, analystName,
+                const numbering = await reservePayoutNumber(db, tx, uid, requestId, timestamp);
+                request = { schemaVersion: 2, requestNumber: numbering.number, analystId: numbering.analystId, requestSequence: numbering.sequence, analystUid: uid, analystName,
                     createdAt: timestamp, status: 'PROCESSING', invoiceIds: ids, caseCount: ids.length, processedCount: 0,
                     totalCents: 0, totalAmount: 0, currency: 'ARS', invoiceStatus: 'NOT_REQUIRED', invoiceReceipt: null, invoiceSnapshot: [], history: [] };
-                tx.set(counterRef, { value: sequence });
                 tx.create(reqRef, request);
                 changes = { status: 'SUBMITTED', invoiceState: 'PENDIENTE_APROBACION' };
             } else {
@@ -72,11 +69,13 @@ export function payoutService(db, { now = () => new Date(), verifyPaymentReceipt
                 requireValue(owner, 'El perfil del analista no existe.');
                 changes = transition(request, data.action, payload, timestamp);
                 if (data.action === 'APPROVE' && !request.orderNumber) {
-                    const counterRef = ref(`payoutCounters/OP-${year}`);
-                    const counter = await tx.get(counterRef);
-                    const sequence = (counter.data()?.value || 0) + 1;
-                    changes.orderNumber = `OP-${year}-${String(sequence).padStart(6, '0')}`;
-                    tx.set(counterRef, { value: sequence });
+                    if (/^\d{8}_\d{2}_\d{4,}$/.test(request.requestNumber || '')) {
+                        changes.orderNumber = request.requestNumber;
+                    } else {
+                        const numbering = await reservePayoutNumber(db, tx, request.analystUid, requestId, timestamp);
+                        changes.orderNumber = numbering.number;
+                        changes.analystId = numbering.analystId;
+                    }
                 }
                 if (data.action === 'PAY') {
                     const receipt = await verifyPaymentReceipt(uid, requestId, payload.receipt);
