@@ -40,7 +40,6 @@ export default function PayoutList({ requests, admin = false }) {
         if (busy) return;
         setBusy(payment.request.id); setError('');
         try {
-            if (!payment.reviewed) throw new Error('Confirmá el cotejo del comprobante antes de registrar el pago.');
             let receipt = payment.receipt;
             if (!receipt) {
                 const file = payment.file;
@@ -52,8 +51,7 @@ export default function PayoutList({ requests, admin = false }) {
                     customMetadata: { uploadedByUid: getAuth().currentUser.uid, requestId: payment.request.id } });
                 setPayment(current => ({ ...current, receipt }));
             }
-            await payoutCommand('PAY', payment.request.id, { date: payment.date, amount: payment.amount, account: payment.account,
-                reference: payment.reference, receipt, receiptReviewed: true });
+            await payoutCommand('PAY', payment.request.id, { receiptOnly: true, receipt });
             setPayment(null);
         } catch (e) { setError(e.message || 'No se pudo registrar el pago. Podés reintentar.'); }
         finally { setBusy(null); }
@@ -94,7 +92,7 @@ export default function PayoutList({ requests, admin = false }) {
                 {!request.activeOperation && admin && <>
                     {['SUBMITTED', 'PENDIENTE_APROBACION'].includes(request.status) && <button className="text-green-600 dark:text-green-400 hover:text-green-800 font-medium disabled:opacity-50" disabled={!!busy} onClick={() => confirm(`¿Aprobar ${requestNumber(request)}?`) && act(request, 'APPROVE')}>Aprobar</button>}
                     {['SUBMITTED', 'PENDIENTE_APROBACION', 'APPROVED_WAITING_INVOICE', 'INVOICE_REVIEW', 'READY_TO_PAY', 'PENDIENTE_PAGO', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA'].includes(request.status) && <button className="text-red-600 dark:text-red-400 hover:text-red-800 font-medium disabled:opacity-50" disabled={!!busy} onClick={() => { const reason = prompt('Motivo del rechazo:'); if (reason) act(request, 'REJECT', { reason }); }}>Rechazar</button>}
-                    {['READY_TO_PAY', 'PENDIENTE_PAGO', 'APPROVED_SCHEDULED', 'APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW'].includes(request.status) && <button className="text-green-700 bg-green-50 dark:bg-green-900/30 dark:text-green-300 px-3 py-1 rounded font-medium hover:bg-green-100 disabled:opacity-50" disabled={!!busy} onClick={() => setPayment({ request, date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }), amount: request.totalAmount, account: '', reference: '' })}>Registrar pago realizado</button>}
+                    {['READY_TO_PAY', 'PENDIENTE_PAGO', 'APPROVED_SCHEDULED', 'APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW'].includes(request.status) && <button className="text-green-700 bg-green-50 dark:bg-green-900/30 dark:text-green-300 px-3 py-1 rounded font-medium hover:bg-green-100 disabled:opacity-50" disabled={!!busy} onClick={() => setPayment({ request })}>Registrar pago realizado</button>}
                 </>}
                 {!admin && ['FAILED', 'REJECTED'].includes(request.status) && <button onClick={() => { clearCreateRetryKey(); alert('Podés volver a seleccionar los casos habilitados desde el dashboard.'); }}>Preparar nueva solicitud</button>}
             </div>
@@ -102,15 +100,14 @@ export default function PayoutList({ requests, admin = false }) {
         </li>)}
         </ul>
         {payment && <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"><form className="bg-white dark:bg-slate-800 p-6 rounded-lg space-y-4 max-w-lg w-full max-h-[90vh] overflow-y-auto" onSubmit={e => { e.preventDefault(); registerPayment(); }}>
-            <h3 className="font-bold">Registrar pago · {requestNumber(payment.request)}</h3><p>Confirmá los datos del pago ya realizado. Esta acción no ejecuta una transferencia.</p>
-            {[['date', 'Fecha efectiva', 'date'], ['amount', 'Importe pagado', 'number'], ['account', 'Cuenta de origen', 'text'], ['reference', 'Referencia / operación bancaria', 'text']].map(([key, label, type]) => <label className="block" key={key}>{label}<input className="block w-full border p-2 dark:bg-slate-900" disabled={!!busy} required type={type} step={key === 'amount' ? '0.01' : undefined} value={payment[key]} onChange={e => setPayment({ ...payment, [key]: e.target.value, reviewed: false })} /></label>)}
+            <h3 className="font-bold">Registrar pago · {requestNumber(payment.request)}</h3>
+            <p>Adjuntá el comprobante para registrar el pago de {Number(payment.request.totalAmount).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' })}.</p>
             <label className="block">Comprobante de transferencia bancaria
-                <input className="block w-full mt-2" type="file" accept="application/pdf,image/jpeg,image/png" disabled={!!busy} required={!payment.receipt} onChange={e => setPayment({ ...payment, file: e.target.files[0], receipt: null, reviewed: false })} />
+                <input className="block w-full mt-2" type="file" accept="application/pdf,image/jpeg,image/png" disabled={!!busy} required={!payment.receipt} onChange={e => setPayment({ ...payment, file: e.target.files[0], receipt: null })} />
                 <span className="text-sm text-slate-500">PDF, JPG o PNG · Hasta 10 MB. Quedará vinculado a esta orden.</span>
             </label>
             {payment.receipt && <p className="text-sm">Comprobante cargado: {payment.receipt.originalName}</p>}
-            <label className="flex items-start gap-2 text-sm"><input type="checkbox" required disabled={!!busy} checked={!!payment.reviewed} onChange={e => setPayment({ ...payment, reviewed: e.target.checked })} />Cotejé beneficiario, importe, fecha y referencia bancaria con el comprobante adjunto.</label>
-            <p className="text-xs text-slate-500">El cotejo queda registrado a tu nombre. La carga no consulta ni confirma movimientos en el banco.</p>
+            <p className="text-xs text-slate-500">Se registrará el total de la solicitud con la fecha de hoy.</p>
             {error && <p role="alert" className="text-red-600">{error}</p>}<button type="button" onClick={() => setPayment(null)} disabled={!!busy}>Cancelar</button><button className="bg-blue-600 text-white p-2 rounded ml-4" disabled={!!busy}>{busy ? 'Guardando comprobante y pago…' : 'Confirmar registro'}</button>
         </form></div>}
     </div>;

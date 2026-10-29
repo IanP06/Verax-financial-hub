@@ -25,3 +25,14 @@ test('approval skips invoice workflow and legacy approved orders remain payable 
     assert.throws(() => transition({ status: 'SUBMITTED', totalCents: 10000 }, 'PAY', payment, now), /lista para pagar/);
     assert.throws(() => transition({ status: 'PAGO' }, 'REJECT', { reason: 'error' }, now));
 });
+
+
+test('receipt-only flow requires an attachment and an approved request, and uses server values', () => {
+    const req = { status: 'READY_TO_PAY', totalCents: 10025 };
+    const payload = { receiptOnly: true, receipt: { storagePath: 'payment_receipts/test/a.pdf' }, amount: 999, date: '2099-01-01' };
+    const result = transition(req, 'PAY', payload, new Date('2026-10-30T01:00:00Z'));
+    assert.equal(result.payment.amount, 100.25);
+    assert.equal(result.paidAt, '2026-10-29');
+    assert.throws(() => transition(req, 'PAY', { receiptOnly: true }, now));
+    for (const status of ['SUBMITTED', 'REJECTED', 'PAGO']) assert.throws(() => transition({ ...req, status }, 'PAY', payload, now));
+});
