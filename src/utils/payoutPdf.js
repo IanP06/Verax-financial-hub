@@ -5,10 +5,6 @@ import { payoutLabels, requestNumber } from './payoutClient.js';
 
 const text = value => value == null || value === '' ? 'No registrado' : String(value);
 const money = value => Number(value || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const actionLabel = action => {
-    const labels = { CREATE: 'Solicitud presentada', APPROVE: 'Aprobación', APPROVED: 'Aprobación', UPLOAD: 'Factura adjunta', INVOICE_UPLOADED: 'Factura adjunta', VERIFY: 'Factura verificada', INVOICE_VERIFIED: 'Factura verificada', PAY: 'Pago registrado', PAID: 'Pago registrado', REJECT: 'Rechazo', REJECTED: 'Rechazo', RESUME: 'Proceso reanudado', ERROR: 'Error de procesamiento', CREATE_FAILED: 'Solicitud no presentada', SUBMITTED: 'Solicitud presentada' };
-    return action?.endsWith('_STARTED') ? `Inicio: ${labels[action.replace('_STARTED', '')] || action}` : labels[action] || text(action);
-};
 const asDate = value => value?.toDate ? value.toDate() : value?.seconds != null ? new Date(value.seconds * 1000) : value ? new Date(value) : null;
 export function pdfDate(value) {
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value.split('-').reverse().join('/');
@@ -31,6 +27,7 @@ export function validatePayoutDocument(request, items) {
 }
 
 export function buildPayoutPdf(request, items, events = [], generatedAt = new Date()) {
+    void events; // Audit remains available in the app, excluded from the printable order.
     validatePayoutDocument(request, items);
     const document = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
     const number = requestNumber(request);
@@ -81,16 +78,6 @@ export function buildPayoutPdf(request, items, events = [], generatedAt = new Da
             ...(request.payment.receipt ? [['Cotejo del comprobante', 'Confirmado por administración al registrar el pago.']] : [])
         ], { 0: { cellWidth: 45, fontStyle: 'bold' } }, { pageBreak: 'avoid' });
     }
-    section('Trazabilidad de la solicitud');
-    const invoiceActions = /^(UPLOAD|VERIFY|INVOICE_UPLOADED|INVOICE_VERIFIED)(_|$)/;
-    const displayState = state => ['APPROVED_WAITING_INVOICE', 'INVOICE_REVIEW', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA'].includes(state) ? 'Aprobada' : payoutLabels[state] || state;
-    const actions = [...(request.history || []), ...events].filter(entry => !invoiceActions.test(entry.action || '')).sort((a, b) => (+asDate(a.at) || 0) - (+asDate(b.at) || 0));
-    table([['Fecha / hora', 'Acción y responsable', 'Estado / observaciones']], actions.length ? actions.map(entry => [
-        pdfDate(entry.at), `${actionLabel(entry.action)}\n${entry.actorName || entry.byUid || entry.byRole || 'Usuario no registrado'}`,
-        [entry.toStatus && displayState(entry.toStatus), entry.note].filter(Boolean).join('\n') || '-'
-    ]) : [['-', 'Sin historial disponible', 'Registro histórico sin eventos.']], { 0: { cellWidth: 38 }, 1: { cellWidth: 65 }, 2: { cellWidth: 77 } });
-    section('Referencia de control', 40);
-    table([], [['ID interno', request.id], ['Alcance', 'Documento de control interno. No es un comprobante bancario ni una factura fiscal. Consultar el estado vigente por número de solicitud u orden en Financial Hub.']], { 0: { cellWidth: 30, fontStyle: 'bold' } }, { pageBreak: 'avoid' });
     const pages = document.getNumberOfPages();
     for (let page = 1; page <= pages; page++) {
         document.setPage(page);
@@ -100,7 +87,9 @@ export function buildPayoutPdf(request, items, events = [], generatedAt = new Da
         document.setFont('helvetica', 'normal'); document.setFontSize(9); document.setTextColor(...ink); document.text(`Estado: ${status}`, 195, 32, { align: 'right' });
         document.setDrawColor(...red); document.setLineWidth(0.7); document.line(15, 39, 195, 39);
         document.setDrawColor(210); document.setLineWidth(0.2); document.line(15, 280, 195, 280);
-        document.setTextColor(90); document.setFontSize(8); document.text(`${number} | Emitido: ${pdfDate(generatedAt)}`, 15, 286); document.text(`${page} / ${pages}`, 195, 286, { align: 'right' });
+        document.setTextColor(90); document.setFontSize(7); document.text(`${number} | Emitido: ${pdfDate(generatedAt)}`, 15, 286); document.text(`${page} / ${pages}`, 195, 286, { align: 'right' });
+        document.setFontSize(6); document.text(`Referencia de control: ${text(request.id)}`, 15, 290, { maxWidth: 180 });
+        document.text('Control interno. No es un comprobante bancario ni una factura fiscal.', 15, 294);
     }
     return { document, filename: `${request.orderNumber || number}_${request.status}.pdf`.replace(/[^a-zA-Z0-9_.-]/g, '_') };
 }

@@ -4,7 +4,7 @@
 
 Se elimina el límite funcional de cinco casos. El analista puede seleccionar todos sus casos habilitados o los del filtro actual y presentar una sola solicitud. El servicio procesa bloques de 75 casos con cursor persistente; cerrar el navegador no interrumpe el procesamiento.
 
-Cada solicitud nueva recibe un número correlativo anual `SOL-AAAA-000001`. Al aprobarla se reserva una orden `OP-AAAA-000001`. Los números son únicos y nunca se reciclan; una validación fallida puede dejar saltos en la secuencia. Las solicitudes existentes conservan su ID y se muestran como `LEG-ID`, sin inventar fechas ni historial.
+Cada solicitud nueva recibe `DDMMAAAA_II_NNNN`: fecha del servidor en Buenos Aires, ID numérico estable del analista entre 01 y 99 y correlativo de al menos cuatro cifras que nunca se reinicia por fecha. La OP conserva el mismo código de su solicitud. El registro de analistas, el contador y la reserva del código en `payoutNumbers` se escriben en la misma transacción que la solicitud. Una reserva existente impide reutilizar un código incluso si el contador fue alterado; los reintentos recuperan el mismo resultado. Los números no se reciclan después de rechazos o fallos. Los identificadores emitidos anteriormente permanecen intactos; una nueva OP de una solicitud antigua recibe un código nuevo sin reescribir su SOL histórica. Al llegar a 99 analistas distintos, se rechaza asignar un ID nuevo con una explicación; el correlativo puede superar 9999 sin truncarse.
 
 ## Fuente de verdad y estados
 
@@ -20,7 +20,7 @@ Cada solicitud nueva recibe un número correlativo anual `SOL-AAAA-000001`. Al a
 
 ## Datos y búsqueda
 
-Cabecera: número SOL, número OP, analista/UID, fecha del servidor, estado, moneda, cantidad de casos, total en centavos, fecha de aprobación/verificación/rechazo/pago y progreso.
+Cabecera: número SOL, número OP, analista/UID/ID numérico, fecha del servidor, estado, moneda, cantidad de casos, total en centavos, fecha de aprobación/verificación/rechazo/pago y progreso.
 
 Detalle inmutable en `payoutRequests/{id}/items`: factura, siniestro, aseguradora, fecha de emisión e importe por caso. Historial en `events`: acción, fecha, usuario/rol, estado anterior/siguiente y motivo. El historial antiguo sigue visible.
 
@@ -59,10 +59,16 @@ La sesión local no tiene una cuenta autorizada de Firebase CLI. El paquete no d
 
 ## PDF corporativo y comprobante bancario
 
-El PDF usa el logo original suministrado por Verax, negro y rojo corporativo, tipografía de mayor tamaño y una banda destacada para el total. No muestra el campo moneda ni el circuito de recepción/validación de la factura del analista; los eventos históricos siguen conservados en la base. Muestra los casos completos, identificadores SOL/OP, estado, acciones relevantes y datos del pago con el nombre del comprobante bancario. Los importes se expresan en pesos.
+El PDF usa el logo original suministrado por Verax, negro y rojo corporativo, tipografía de mayor tamaño y una banda destacada para el total. No muestra el campo moneda ni el circuito de recepción/validación de la factura del analista; los eventos históricos siguen conservados en la base. Muestra los casos completos, identificadores SOL/OP, estado y datos del pago con el nombre del comprobante bancario. Los importes se expresan en pesos.
 
 Por decisión del usuario, el circuito de factura se elimina tanto del PDF como de la app. Las reglas históricas requiresInvoice ya no condicionan aprobar ni pagar. Los estados históricos APPROVED_WAITING_INVOICE, NEEDS_INVOICE, PENDIENTE_FACTURA e INVOICE_REVIEW se muestran como pendiente de pago y pueden continuar con comprobante bancario, sin migrar ni borrar su historial. No se admiten pagos desde solicitudes aún no aprobadas.
 
 El formulario permite adjuntar el respaldo y exige cotejo manual antes de confirmar. Si cambia un dato del pago, se debe confirmar el cotejo nuevamente. Un error después de cargar el archivo conserva su referencia para reintentar sin duplicar la carga. La pantalla de detalle permite abrir el comprobante asociado. Archivos cargados y abandonados no generan pagos; no se purgan automáticamente en esta versión.
 
 Validación adicional: firmas de PDF/JPEG/PNG, metadata obtenida por servidor, permisos Storage por rol y orden, inmutabilidad, acceso del analista solo al adjunto confirmado y PDF de 300 casos sin omisiones. Revisión visual del ejemplo de 35 casos en tres páginas. Sigue pendiente la prueba de punta a punta de callable/trigger/Storage en Firebase de prueba y la revisión interactiva en navegador.
+
+## Presentación compacta
+
+La sección Solicitudes de Pago recupera el contenedor único con filas compactas, nombre del analista, etiqueta de estado, importe a la derecha y detalle desplegable. Conserva filtros, búsqueda, PDF, comprobantes y acciones del flujo nuevo. El PDF omite la trazabilidad; el historial permanece en la app y la referencia de control se imprime a seis puntos en el pie.
+
+Validación de esta revisión: 36 pruebas unitarias, 37 integraciones de servicio/reglas, prueba integral contra callable y triggers del laboratorio, build, lint y revisión visual de lista y tres páginas del PDF. Incluye concurrencia de ocho solicitudes, reintento idempotente, múltiples analistas, fecha de Buenos Aires, límite de 99 IDs, correlativo mayor a 9999 y rechazo de códigos ya reservados.
