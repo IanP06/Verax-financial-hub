@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { reservePayoutNumber } from './payoutNumbers.js';
 import { createHash } from 'node:crypto';
 import { DomainError, requireValue, nameKey, eligible, snapshot, transition, invoiceCents, cents } from './domain.js';
@@ -69,24 +70,20 @@ export function payoutService(db, { now = () => new Date(), verifyPaymentReceipt
                 requireValue(owner, 'El perfil del analista no existe.');
                 changes = transition(request, data.action, payload, timestamp);
                 if (data.action === 'APPROVE' && !request.orderNumber) {
-                    if (/^\d{8}_\d{2}_\d{4,}$/.test(request.requestNumber || '')) {
-                        changes.orderNumber = request.requestNumber;
-                    } else {
-                        const numbering = await reservePayoutNumber(db, tx, request.analystUid, requestId, timestamp);
-                        changes.orderNumber = numbering.number;
-                        changes.analystId = numbering.analystId;
-                    }
+                    changes.orderNumber = request.requestNumber || `LEG-${requestId}`;
                 }
                 if (data.action === 'PAY') {
                     const receipt = await verifyPaymentReceipt(uid, requestId, payload.receipt);
                     changes.payment.receipt = receipt;
-                    changes.payment.receiptReviewedByUid = uid;
-                    changes.payment.receiptReviewedAt = timestamp.toISOString();
+                    if (payload.receiptOnly !== true) {
+                        changes.payment.receiptReviewedByUid = uid;
+                        changes.payment.receiptReviewedAt = timestamp.toISOString();
+                    }
                     changes.payment.recordedByName = profile.displayName || uid;
-                    const paymentKey = hash(`${nameKey(changes.payment.account)}:${nameKey(changes.payment.reference)}`);
+                    const paymentKey = payload.receiptOnly === true ? hash(`receipt:${receipt.sha256}`) : hash(`${nameKey(changes.payment.account)}:${nameKey(changes.payment.reference)}`);
                     const paymentRef = ref(`payoutPaymentReferences/${paymentKey}`);
                     const duplicate = await tx.get(paymentRef);
-                    requireValue(!duplicate.exists, 'Esta referencia bancaria ya fue registrada en otra orden.');
+                    requireValue(!duplicate.exists, payload.receiptOnly === true ? 'Este comprobante ya fue registrado en otra orden.' : 'Esta referencia bancaria ya fue registrada en otra orden.');
                     tx.create(paymentRef, { requestId, jobId, reservedAt: timestamp });
                     changes.payment.key = paymentKey;
                     changes.payment.recordedByUid = uid;

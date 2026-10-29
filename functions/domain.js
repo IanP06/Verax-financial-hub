@@ -56,6 +56,15 @@ export function transition(request, action, payload, now) {
         return { status: 'REJECTED', invoiceState: 'IMPAGO', rejectionReason: payload.reason.trim() };
     }
     if (action === 'PAY') {
+        if (payload.receiptOnly === true) {
+            requireValue(payload.receipt?.storagePath, 'Adjuntá el comprobante del pago.');
+            requireValue(['READY_TO_PAY', 'PENDIENTE_PAGO', 'APPROVED_SCHEDULED', 'APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW'].includes(state), 'La orden no está lista para pagar.');
+            const amountCents = request.totalCents ?? cents(request.totalAmount);
+            requireValue(Number.isSafeInteger(amountCents) && amountCents >= 0, 'Importe inválido.');
+            const date = localDate(now);
+            return { status: 'PAGO', invoiceState: 'PAGO', paidAt: date,
+                payment: { date, amount: amountCents / 100, amountCents, currency: 'ARS', registrationMode: 'RECEIPT_ONLY' } };
+        }
         requireValue(payload.receiptReviewed === true && payload.receipt?.storagePath, 'Adjuntá el comprobante y confirmá el cotejo de beneficiario, importe, fecha y referencia.');
         requireValue(['READY_TO_PAY', 'PENDIENTE_PAGO', 'APPROVED_SCHEDULED', 'APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW'].includes(state), 'La orden no está lista para pagar.');
         requireValue(cents(payload.amount) === (request.totalCents ?? cents(request.totalAmount)), 'El importe pagado debe coincidir con el total de la orden.');

@@ -1,3 +1,13 @@
+# Actualización: comprobante único y solicitudes SOL
+
+Desde esta versión, las solicitudes nuevas reciben SOL00001, SOL00002 y correlativos globales. El contador `payoutCounters/sol` y la reserva `payoutNumbers` se escriben atómicamente. No se renumeran documentos ni contadores anteriores; la OP nueva conserva el código de su solicitud. El número no se recicla tras rechazos y admite más de cinco cifras.
+
+El formulario pide únicamente el archivo PDF/JPG/PNG de hasta 10 MB y confirmar. El servidor valida el comprobante existente, su propietario, firma, tamaño y huella SHA-256; usa el importe autorizado de la solicitud y la fecha de registro en Argentina. No se extraen datos bancarios del PDF ni se registra un cotejo manual que no ocurrió. Se rechaza reutilizar el mismo archivo entre nuevos pagos simplificados. Los pagos y adjuntos históricos siguen disponibles. Se conserva temporalmente el contrato anterior de pago para pestañas ya abiertas.
+
+Publicación: desplegar primero las dos funciones del codebase `payouts`, luego el frontend. Las reglas vigentes de Firestore y Storage ya son compatibles y no requieren cambios. No crear solicitudes ni pagos ficticios en producción.
+
+## Documentación de versiones anteriores
+
 # Solicitudes múltiples y trazabilidad de órdenes de pago
 
 ## Resultado

@@ -68,14 +68,14 @@ export function buildPayoutPdf(request, items, events = [], generatedAt = new Da
     if (request.payment) {
         section('Pago y respaldo bancario', 95);
         table([], [
-            ['Fecha efectiva', pdfDate(request.payment.date || request.paidAt)],
+            [request.payment.registrationMode === 'RECEIPT_ONLY' ? 'Fecha de registro' : 'Fecha efectiva', pdfDate(request.payment.date || request.paidAt)],
             ['Importe pagado', `$ ${money(request.payment.amount)}`],
-            ['Cuenta de origen', text(request.payment.account)],
-            ['Referencia bancaria', text(request.payment.reference)],
+            ...(request.payment.account ? [['Cuenta de origen', text(request.payment.account)]] : []),
+            ...(request.payment.reference ? [['Referencia bancaria', text(request.payment.reference)]] : []),
             ['Comprobante', request.payment.receipt?.originalName || request.payment.receipt?.fileName || 'Sin comprobante adjunto (registro anterior)'],
             ['Registrado por', request.payment.recordedByName || text(request.payment.recordedByUid)],
             ['Fecha de registro', pdfDate(request.payment.recordedAt)],
-            ...(request.payment.receipt ? [['Cotejo del comprobante', 'Confirmado por administración al registrar el pago.']] : [])
+            ...(request.payment.receiptReviewedByUid ? [['Cotejo del comprobante', 'Confirmado por administración al registrar el pago.']] : [])
         ], { 0: { cellWidth: 45, fontStyle: 'bold' } }, { pageBreak: 'avoid' });
     }
     const pages = document.getNumberOfPages();
