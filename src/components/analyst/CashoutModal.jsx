@@ -2,46 +2,11 @@ import React, { useState } from 'react';
 import useAnalystStore from '../../store/useAnalystStore';
 
 import { getAnalystTotal } from '../../utils/money';
-import { MAX_PAYOUT_INVOICES } from '../../utils/payoutLimits';
+
 
 const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfile }) => {
     const { createPayoutRequest } = useAnalystStore();
     const [loading, setLoading] = useState(false);
-    const [requiresInvoice, setRequiresInvoice] = useState(false);
-
-    // Fetch Rule on Open
-    React.useEffect(() => {
-        if (isOpen && (userProfile?.displayName || user?.email)) {
-            const fetchRule = async () => {
-                try {
-                    // Try to read the specific rule for this analyst
-                    // Assuming 'settings/analystRules' is a DOC with an array 'rules' or similar based on previous context.
-                    // Or we can just check userProfile if Admin syncs it.
-                    // BUT Prompt said: "NO hardcodear... se lee desde Firestore... Compatibilidad: si un analista NO tiene regla cargada todavía, default requiresInvoice=false"
-
-                    const { doc, getDoc } = await import('firebase/firestore');
-                    const { db } = await import('../../lib/firebase');
-
-                    // Assuming 'rules' array in 'settings/analystRules'
-                    const docRef = doc(db, 'settings', 'analystRules');
-                    const snap = await getDoc(docRef);
-                    if (snap.exists()) {
-                        const data = snap.data();
-                        const rules = data.rules || [];
-                        const meName = userProfile?.analystKey || userProfile?.displayName || user?.email;
-                        const myRule = rules.find(r => r.name === meName);
-                        if (myRule && myRule.requiresInvoice) {
-                            setRequiresInvoice(true);
-                        }
-                    }
-                } catch (e) {
-                    console.error("Error reading rules:", e);
-                }
-            };
-            fetchRule();
-        }
-    }, [isOpen, user, userProfile]);
-
     if (!isOpen) return null;
 
     // Filter full invoice objects
@@ -53,12 +18,9 @@ const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfil
         const selectedInvoices = invoices.filter(inv => selectedIds.includes(inv.id));
         const analystName = userProfile?.analystKey || userProfile?.displayName || user?.email || 'Analista';
 
-        // Check for invoice requirement (State based)
-        // const requiresInvoice = userProfile?.requiresInvoice === true; // OLD
-
-        const result = await createPayoutRequest(user.uid, analystName, selectedInvoices, requiresInvoice);
+        const result = await createPayoutRequest(user.uid, analystName, selectedInvoices);
         if (result && result.success) {
-            alert("Solicitud creada exitosamente.");
+            alert(`Solicitud ${result.requestNumber} recibida. Podés seguir su validación en el historial.`);
             onClose();
         } else {
             alert("Error: " + (result?.error || 'Desconocido'));
@@ -137,18 +99,10 @@ const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfil
                         <span>Total a Solicitar:</span>
                         <span>${totalAmount.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                     </div>
-                    {requiresInvoice && (
-                        <div className="bg-yellow-50 p-3 rounded text-xs text-yellow-800">
-                            ⚠️ Usted emite Factura C. Deberá subir el comprobante una vez aprobada la solicitud.
-                        </div>
-                    )}
+
                 </div>
 
-                {selectedInvoices.length > MAX_PAYOUT_INVOICES && (
-                    <p role="alert" className="mb-4 text-sm text-red-600">
-                        Seleccioná hasta {MAX_PAYOUT_INVOICES} facturas por solicitud. Podés presentar otra solicitud con las restantes.
-                    </p>
-                )}
+
                 <div className="flex justify-end gap-3">
                     <button
                         onClick={onClose}
@@ -160,7 +114,7 @@ const CashoutModal = ({ isOpen, onClose, selectedIds, invoices, user, userProfil
                     <button
                         onClick={handleConfirm}
                         className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-500 disabled:opacity-50"
-                        disabled={loading || selectedInvoices.length === 0 || selectedInvoices.length > MAX_PAYOUT_INVOICES}
+                        disabled={loading || selectedInvoices.length === 0}
                     >
                         {loading ? 'Procesando...' : 'Confirmar Solicitud'}
                     </button>

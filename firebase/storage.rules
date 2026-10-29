@@ -1,0 +1,30 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function profile() { return firestore.get(/databases/(default)/documents/userProfiles/$(request.auth.uid)).data; }
+    function active() { return request.auth != null && profile().get('isActive', true) != false; }
+    function admin() { return active() && profile().role.lower() == 'admin'; }
+    function requestData(id) { return firestore.get(/databases/(default)/documents/payoutRequests/$(id)).data; }
+    match /liquidations/{order}/{file} {
+      allow read: if admin();
+      allow create, update: if admin() && request.resource.contentType == 'application/pdf' && request.resource.size <= 20 * 1024 * 1024;
+      allow delete: if admin();
+    }
+    match /payout_receipts/{id}/{file} {
+      allow read: if admin() || (active() && requestData(id).analystUid == request.auth.uid);
+      allow create, update, delete: if false;
+    }
+    match /payment_receipts/{id}/{file} {
+      allow read: if admin() || (active() && requestData(id).analystUid == request.auth.uid &&
+        requestData(id).get('payment', {}).get('receipt', {}).get('storagePath', '') == 'payment_receipts/' + id + '/' + file);
+      allow create: if resource == null && admin() && requestData(id).status in ['READY_TO_PAY', 'PENDIENTE_PAGO', 'APPROVED_SCHEDULED', 'APPROVED_WAITING_INVOICE', 'NEEDS_INVOICE', 'PENDIENTE_FACTURA', 'INVOICE_REVIEW'] &&
+        requestData(id).get('activeOperation', null) == null &&
+        request.resource.size > 0 && request.resource.size <= 10 * 1024 * 1024 &&
+        request.resource.metadata.uploadedByUid == request.auth.uid && request.resource.metadata.requestId == id &&
+        ((request.resource.contentType == 'application/pdf' && file.matches('[a-zA-Z0-9-]+[.]pdf')) ||
+         (request.resource.contentType == 'image/jpeg' && file.matches('[a-zA-Z0-9-]+[.]jpg')) ||
+         (request.resource.contentType == 'image/png' && file.matches('[a-zA-Z0-9-]+[.]png')));
+      allow update, delete: if false;
+    }
+  }
+}

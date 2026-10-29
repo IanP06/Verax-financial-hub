@@ -72,23 +72,10 @@ test('analysts can use both ownership queries but cannot list all invoices or pr
 test('unknown and inactive accounts have no financial access', async () => {
     for (const uid of ['unknown', 'inactive']) await assertFails(api.getDoc(api.doc(dbFor(uid), 'invoices/a')));
 });
-test('analyst request succeeds with absent mirror and preserves existing mirror amounts', async () => {
-    await seed({ 'analyst_invoices/ana/items/a': { totalAPagarAnalista: 25000 } });
-    await assertSucceeds(requestBatch(dbFor('ana')));
-    const mirror = await api.getDoc(api.doc(dbFor('ana'), 'analyst_invoices/ana/items/a'));
-    assert.equal(mirror.data().totalAPagarAnalista, 25000);
+test('all browser payout creation is denied; service owns the workflow', async () => {
+    for (const uid of ['ana', 'admin']) await assertFails(requestBatch(dbFor(uid)));
 });
-test('five invoices including absent mirrors commit atomically within rule access limits', async () => {
-    const ids = Array.from({ length: 5 }, (_, i) => `case${i}`);
-    await seed(Object.fromEntries(ids.map(id => [`invoices/${id}`, inv()])));
-    await assertSucceeds(requestBatch(dbFor('ana'), ids));
-});
-test('six invoices fail before changing any invoice', async () => {
-    const ids = Array.from({ length: 6 }, (_, i) => `case${i}`);
-    await seed(Object.fromEntries(ids.map(id => [`invoices/${id}`, inv()])));
-    await assertFails(requestBatch(dbFor('ana'), ids));
-    assert.equal((await api.getDoc(api.doc(dbFor('ana'), 'invoices/case0'))).data().estadoPago, 'IMPAGO');
-});
+
 test('rejects fake totals, duplicate IDs, foreign invoices, extra fields and incomplete batches', async () => {
     const db = dbFor('ana');
     await assertFails(requestBatch(db, ['a'], { request: { totalAmount: 1 } }));
@@ -107,27 +94,31 @@ test('paid or already-linked invoices cannot be requested twice', async () => {
 });
 test('analyst cannot approve, pay, change amounts or write another mirror', async () => {
     const db = dbFor('ana');
-    await assertSucceeds(requestBatch(db));
+    await seed({ 'payoutRequests/new': { analystUid: 'ana', status: 'SUBMITTED' } });
     await assertFails(api.updateDoc(api.doc(db, 'payoutRequests/new'), { status: 'READY_TO_PAY' }));
     await assertFails(api.updateDoc(api.doc(db, 'invoices/a'), { estadoPago: 'PAGO' }));
     await assertFails(api.updateDoc(api.doc(db, 'invoices/a'), { totalAPagarAnalista: 1 }));
     await assertFails(api.setDoc(api.doc(db, 'analyst_invoices/beto/items/a'), { estadoPago: 'PAGO' }));
     await assertFails(api.updateDoc(api.doc(db, 'analyst_invoices/ana/items/a'), { totalAPagarAnalista: 1 }));
 });
-test('approved receipt upload transitions main and missing mirror without altering financial fields', async () => {
+test('browsers cannot alter ledger, audit or linked invoice amounts, including administrators', async () => {
     await seed({
-        'payoutRequests/approved': { analystUid: 'ana', invoiceIds: ['a'], status: 'APPROVED_WAITING_INVOICE', totalAmount: 25000 },
-        'invoices/a': inv({ estadoPago: 'PENDIENTE_FACTURA', linkedPayoutRequestId: 'approved' })
+        'payoutRequests/approved': { analystUid: 'ana', status: 'APPROVED_WAITING_INVOICE' },
+        'payoutRequests/approved/items/a': { total: 25000 },
+        'payoutRequests/approved/events/start': { action: 'CREATE' },
+        'invoices/a': inv({ linkedPayoutRequestId: 'approved' })
     });
-    const db = dbFor('ana'), batch = api.writeBatch(db);
-    batch.update(api.doc(db, 'payoutRequests/approved'), { status: 'READY_TO_PAY', invoiceStatus: 'UPLOADED',
-        invoiceReceipt: { uploadedByUid: 'ana', fileName: 'receipt.pdf', storagePath: 'payout_receipts/approved/receipt.pdf' } });
-    batch.update(api.doc(db, 'invoices/a'), { estadoPago: 'PENDIENTE_PAGO', paymentStatus: 'PENDIENTE_PAGO' });
-    batch.set(api.doc(db, 'analyst_invoices/ana/items/a'), { estadoPago: 'PENDIENTE_PAGO', paymentStatus: 'PENDIENTE_PAGO' });
-    await assertSucceeds(batch.commit());
-    await assertSucceeds(api.getDocs(api.query(api.collection(db, 'payoutRequests'), api.where('analystUid', '==', 'ana'))));
-    await assertFails(api.getDoc(api.doc(dbFor('beto'), 'payoutRequests/approved')));
+    for (const uid of ['ana', 'admin']) {
+        const db = dbFor(uid);
+        await assertFails(api.updateDoc(api.doc(db, 'payoutRequests/approved'), { status: 'PAGO' }));
+        await assertFails(api.updateDoc(api.doc(db, 'payoutRequests/approved/items/a'), { total: 1 }));
+        await assertFails(api.updateDoc(api.doc(db, 'payoutRequests/approved/events/start'), { action: 'PAGO' }));
+        await assertFails(api.updateDoc(api.doc(db, 'invoices/a'), { totalAPagarAnalista: 1 }));
+        await assertSucceeds(api.getDoc(api.doc(db, 'payoutRequests/approved/items/a')));
+    }
+    await assertFails(api.getDoc(api.doc(dbFor('beto'), 'payoutRequests/approved/events/start')));
 });
+
 test('actual admin bulk transaction updates 200 main invoices and 200 mirrors', async () => {
     const rows = Array.from({ length: 200 }, (_, i) => ({ id: `bulk${i}`, ...inv() }));
     await seed(Object.fromEntries(rows.map(({ id, ...data }) => [`invoices/${id}`, data])));

@@ -19,6 +19,11 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm ci
+      - run: npm ci --prefix functions
+      - run: node --check functions/index.js
       - run: npm test
       - run: npm run test:rules
+      - run: npm run test:lab
+        env:
+          FUNCTIONS_DISCOVERY_TIMEOUT: 60
       - run: npm run build

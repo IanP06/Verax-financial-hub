@@ -1,9 +1,8 @@
 import { create } from 'zustand';
 import { db } from '../lib/firebase';
-import { collection, getDocs, addDoc, query, where, orderBy, doc, updateDoc, serverTimestamp, getDoc, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { normalizeName } from '../utils/text';
-import { getAnalystTotal } from '../utils/money';
-import { MAX_PAYOUT_INVOICES } from '../utils/payoutLimits';
+import { payoutCommand } from '../utils/payoutClient';
 
 const useAnalystStore = create((set, get) => ({
     analystInvoices: [],
@@ -237,176 +236,14 @@ const useAnalystStore = create((set, get) => ({
         }
     },
 
-    createPayoutRequest: async (uid, analystName, selectedInvoices, /* legacyArg ignored */) => {
-        // selectedInvoices: Array of full invoice objects
-        if (!uid || selectedInvoices.length === 0) return;
-        if (selectedInvoices.length > MAX_PAYOUT_INVOICES) return {
-            success: false,
-            error: `Seleccioná hasta ${MAX_PAYOUT_INVOICES} facturas por solicitud. Podés presentar otra solicitud con las restantes.`
-        };
-
+    createPayoutRequest: async (uid, analystName, selectedInvoices) => {
+        if (!uid || !selectedInvoices.length) return { success: false, error: 'Seleccioná casos habilitados.' };
         set({ loading: true });
         try {
-            // Import batch
-            const { writeBatch } = await import('firebase/firestore');
-            const batch = writeBatch(db);
-            const { normalizeName } = await import('../utils/text');
-
-            // --- CRITICAL RULE CHECK ---
-            // Fetch fresh rule from Firestore (avoid store race conditions)
-            const rule = await get().fetchAnalystRule(analystName);
-            const requiresInvoice = rule?.requiresInvoice === true;
-
-            const normName = normalizeName(analystName);
-            console.log(`[Rules] Analyst ${analystName} normalized=${normName} requiresInvoice=${requiresInvoice} source=firestore`);
-            // ---------------------------
-            const totalAmount = selectedInvoices.reduce((sum, inv) => sum + getAnalystTotal(inv), 0);
-            const invoiceIds = selectedInvoices.map(i => i.id);
-
-            // Snapshot vital fields for history
-            const invoiceSnapshot = selectedInvoices.map(inv => ({
-                id: inv.id,
-                nroFactura: inv.nroFactura || inv.factura || inv.invoiceNumber || '-',
-                siniestro: inv.siniestro || inv.claimNumber || '-',
-                aseguradora: inv.aseguradora || inv.insurer || '-',
-                fechaEmision: inv.fechaEmision || inv.fecha || inv.issueDate || '-',
-                total: getAnalystTotal(inv)
-            }));
-
-            // 1. Create Request Doc Reference
-            const requestRef = doc(collection(db, 'payoutRequests'));
-            const requestId = requestRef.id;
-
-            const requestData = {
-                analystUid: uid,
-                analystName: analystName,
-                createdAt: serverTimestamp(),
-                status: 'SUBMITTED',
-                invoiceIds: invoiceIds,
-                invoiceSnapshot: invoiceSnapshot,
-                totalAmount: totalAmount,
-                expiresAt: null,
-                requiresInvoiceSnapshot: !!requiresInvoice,
-                invoiceStatus: requiresInvoice ? 'REQUIRED' : 'NOT_REQUIRED', // [NEW] Flow Control
-                invoiceReceipt: null,
-                history: [
-                    {
-                        at: new Date().toISOString(),
-                        action: 'SUBMITTED',
-                        note: 'Solicitud creada por analista'
-                    }
-                ]
-            };
-
-            // Add Request to Batch
-            batch.set(requestRef, requestData);
-
-            // 2. Update Invoices to PENDIENTE_APROBACION
-            invoiceIds.forEach(invId => {
-                // Update MAIN invoices collection
-                const invRef = doc(db, 'invoices', invId);
-                batch.update(invRef, {
-                    estadoPago: 'PENDIENTE_APROBACION',
-                    paymentStatus: 'PENDIENTE_APROBACION',
-                    linkedPayoutRequestId: requestId,
-                    payoutRequestedAt: serverTimestamp()
-                });
-
-                // Update MIRROR (Safe set with merge to avoid 'No document to update' error)
-                const mirrorRef = doc(db, `analyst_invoices/${uid}/items`, invId);
-                batch.set(mirrorRef, {
-                    paymentStatus: 'PENDIENTE_APROBACION',
-                    estadoPago: 'PENDIENTE_APROBACION',
-                    linkedPayoutRequestId: requestId
-                }, { merge: true });
-            });
-
-            await batch.commit();
-
-            // Refresh local state - Handled by Listeners now
-            // await get().fetchAnalystData(uid); -- Removed
-
-            return { success: true };
-        } catch (err) {
-            console.error("Error creating payout request:", err);
-            set({ loading: false, error: "Error creando solicitud" });
-            return { success: false, error: err.message };
-        }
-    },
-
-    uploadInvoiceReceipt: async (requestId, file, analystUid) => {
-        set({ loading: true });
-        try {
-            const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
-            const { arrayUnion } = await import('firebase/firestore'); // ensure imports
-
-            const storage = getStorage();
-            const storageRef = ref(storage, `payout_receipts/${requestId}/${file.name}`);
-
-            await uploadBytes(storageRef, file);
-            const url = await getDownloadURL(storageRef);
-
-            // 2. Update Request
-            const reqRef = doc(db, 'payoutRequests', requestId);
-
-            // Fetch request 
-            const reqSnap = await getDoc(reqRef);
-            if (!reqSnap.exists()) throw new Error("Solicitud no encontrada");
-            // const reqData = reqSnap.data(); // Not strictly needed unless logic depends on it
-
-            const { writeBatch } = await import('firebase/firestore');
-            const batch = writeBatch(db);
-
-            // Request Update
-            // NOTE: User prompt says: "Tras subir PDF... mover status a READY_TO_PAY"
-            batch.update(reqRef, {
-                status: 'READY_TO_PAY',
-                invoiceStatus: 'UPLOADED',
-                invoiceReceipt: {
-                    url: url,
-                    fileName: file.name,
-                    uploadedAt: new Date().toISOString(),
-                    uploadedByUid: analystUid,
-                    storagePath: `payout_receipts/${requestId}/${file.name}`
-                },
-                history: arrayUnion({
-                    at: new Date().toISOString(),
-                    action: 'INVOICE_UPLOADED',
-                    note: `Factura subida: ${file.name}`
-                })
-            });
-
-            // 3. Update Invoices (Main + Mirror) -> PENDIENTE_PAGO
-            // This enables "Pagar" flow
-            const reqDataForIds = reqSnap.data();
-            if (reqDataForIds.invoiceIds && reqDataForIds.invoiceIds.length > 0) {
-                reqDataForIds.invoiceIds.forEach(invId => {
-                    // Main
-                    batch.update(doc(db, 'invoices', invId), {
-                        estadoPago: 'PENDIENTE_PAGO',
-                        paymentStatus: 'PENDIENTE_PAGO'
-                    });
-                    // Mirror (Safe set with merge)
-                    batch.set(doc(db, `analyst_invoices/${analystUid}/items`, invId), {
-                        paymentStatus: 'PENDIENTE_PAGO',
-                        estadoPago: 'PENDIENTE_PAGO'
-                    }, { merge: true });
-                });
-            }
-
-            await batch.commit();
-
-            // Refresh - Handled by Listeners
-            // await get().fetchAnalystData(analystUid); -- Removed
-            set({ loading: false });
-            return { success: true, url };
-
-        } catch (err) {
-            console.error("Error uploading receipt:", err);
-            set({ loading: false, error: "Error subiendo comprobante" });
-            return { success: false, error: err.message };
-        }
+            const result = await payoutCommand('CREATE', null, { invoiceIds: selectedInvoices.map(i => i.id).sort() });
+            return { success: true, ...result };
+        } catch (error) { return { success: false, error: error.message }; }
+        finally { set({ loading: false }); }
     }
 }));
-
 export default useAnalystStore;

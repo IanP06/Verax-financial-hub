@@ -25,7 +25,7 @@ const Settings = () => {
             if (!localConfig.analystRules?.some(r => r.name === name)) {
                 setLocalConfig(prev => ({
                     ...prev,
-                    analystRules: [...(prev.analystRules || []), { name, pct: 30, mode: 'EDITABLE', requiresInvoice: false, isActive: true }]
+                    analystRules: [...(prev.analystRules || []), { name, pct: 30, mode: 'EDITABLE', isActive: true }]
                 }));
             }
             setNewAnalyst('');
@@ -262,18 +262,18 @@ const Settings = () => {
                             if (!confirm("Esto sobrescribirá la configuración de reglas de analistas y creará perfiles de usuario si no existen. ¿Continuar?")) return;
 
                             const seeds = [
-                                { name: 'Ariel', requiresInvoice: true, pct: 50, mode: 'FIXED' },
-                                { name: 'Cesar', requiresInvoice: false, pct: 30, mode: 'EDITABLE' },
-                                { name: 'Daniel', requiresInvoice: false, pct: 30, mode: 'FIXED' },
-                                { name: 'Emiliano', requiresInvoice: false, pct: 30, mode: 'FIXED' },
-                                { name: 'Eugenia y Debora', requiresInvoice: true, pct: 50, mode: 'FIXED' },
-                                { name: 'Jazmin', requiresInvoice: false, pct: 30, mode: 'FIXED' },
-                                { name: 'Jeremias', requiresInvoice: false, pct: 30, mode: 'FIXED' },
-                                { name: 'Natalia', requiresInvoice: true, pct: 50, mode: 'FIXED' },
-                                { name: 'Pablo', requiresInvoice: false, pct: 30, mode: 'FIXED' },
-                                { name: 'Rodrigo', requiresInvoice: true, pct: 50, mode: 'FIXED' },
-                                { name: 'Sofia', requiresInvoice: true, pct: 50, mode: 'EDITABLE' },
-                                { name: 'Tomás', requiresInvoice: false, pct: 30, mode: 'EDITABLE' },
+                                { name: 'Ariel', pct: 50, mode: 'FIXED' },
+                                { name: 'Cesar', pct: 30, mode: 'EDITABLE' },
+                                { name: 'Daniel', pct: 30, mode: 'FIXED' },
+                                { name: 'Emiliano', pct: 30, mode: 'FIXED' },
+                                { name: 'Eugenia y Debora', pct: 50, mode: 'FIXED' },
+                                { name: 'Jazmin', pct: 30, mode: 'FIXED' },
+                                { name: 'Jeremias', pct: 30, mode: 'FIXED' },
+                                { name: 'Natalia', pct: 50, mode: 'FIXED' },
+                                { name: 'Pablo', pct: 30, mode: 'FIXED' },
+                                { name: 'Rodrigo', pct: 50, mode: 'FIXED' },
+                                { name: 'Sofia', pct: 50, mode: 'EDITABLE' },
+                                { name: 'Tomás', pct: 30, mode: 'EDITABLE' },
                             ];
 
                             // 1. Update Config Rules
